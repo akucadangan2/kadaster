@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voxel Analysis - Sumur Bandung 3D Cadastre</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  
+    <style>
+        :root {
+            --dark-blue: #0D1B2A; --mid-blue: #1B263B; --light-blue: #415A77; 
+            --accent-blue: #00A6FB; --text-light: #E0E1DD;
+            --color-emisi-source: #ff4d4d; --color-emisi-sink: #4dff4d; --color-struktur: #999999;
+        }
+        body { font-family: 'Inter', sans-serif; background-color: var(--dark-blue); color: var(--text-light); }
+        .card { background-color: var(--mid-blue); border: 1px solid var(--light-blue); border-radius: 1rem; }
+        .map-container, .threejs-container { border-radius: 0.75rem; overflow: hidden; }
+        .loading-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+        .loading-spinner { border: 4px solid var(--light-blue); border-top: 4px solid var(--accent-blue); border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .btn-primary { background-color: var(--accent-blue); color: var(--dark-blue); font-weight: 600; padding: 0.5rem 1rem; border-radius: 0.5rem; transition: all 0.2s ease; }
+        .btn-primary:hover { opacity: 0.9; }
+        .input-field { background-color: var(--dark-blue); border: 1px solid var(--light-blue); border-radius: 0.5rem; padding: 0.5rem; width: 100%; }
+        .analysis-item { display: flex; justify-content: space-between; padding: 0.5rem; border-radius: 0.25rem; }
+        .analysis-item:nth-child(odd) { background-color: rgba(0,0,0,0.2); }
+        #main-sidebar { transition: margin-left 0.3s ease-in-out; }
+        #main-sidebar.collapsed { margin-left: -20rem; } /* w-80 adalah 20rem */
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="flex">
+        <aside id="main-sidebar" class="w-80 h-screen bg-gray-900 p-6 flex flex-col space-y-6 overflow-y-auto">
+            <h2 class="text-2xl font-bold"><span class="text-[var(--accent-blue)]">Kontrol</span> Analisis</h2>
+            
+            <div class="space-y-2">
+                <label for="kdb-input" class="font-semibold">KDB (Koefisien Dasar Bangunan) (%)</label>
+                <input type="number" id="kdb-input" class="input-field" value="60">
+            </div>
+            <div class="space-y-2">
+                <label for="klb-input" class="font-semibold">KLB (Koefisien Lantai Bangunan)</label>
+                <input type="number" id="klb-input" class="input-field" value="2.4" step="0.1">
+            </div>
+            <div class="space-y-2">
+                <label for="tinggi-lantai-input" class="font-semibold">Tinggi per Lantai (meter)</label>
+                <input type="number" id="tinggi-lantai-input" class="input-field" value="3.5" step="0.1">
+            </div>
+            <div class="space-y-2">
+                <label for="voxel-size-input" class="font-semibold">Ukuran Voxel (meter)</label>
+                <input type="number" id="voxel-size-input" class="input-field" value="1.0" step="0.5">
+            </div>
+            <div class="space-y-2 pt-4 border-t border-gray-700">
+                <h3 class="font-bold text-lg text-gray-300">Parameter Nilai</h3>
+                <label for="harga-tanah-input" class="font-semibold text-sm">Harga Tanah per m² (Rp)</label>
+                <input type="number" id="harga-tanah-input" class="input-field" value="8000000">
+            </div>
+            <div class="space-y-2">
+                <label for="biaya-konstruksi-input" class="font-semibold text-sm">Biaya Konstruksi per m³ (Rp)</label>
+                <input type="number" id="biaya-konstruksi-input" class="input-field" value="4500000">
+            </div>
+            <button id="reset-selection-btn" class="bg-red-500 text-white font-semibold p-2 rounded-md w-full mt-4 hover:bg-red-600 transition-all">Reset Pilihan Bangunan</button>
+            <button id="update-analysis-btn" class="btn-primary w-full mt-2">Perbarui Analisis Voxel</button>
+            <div class="text-xs text-gray-400 pt-4 border-t border-gray-700">
+                Ubah nilai di atas lalu klik "Perbarui" untuk melihat perubahan pada visual voxel.
+            </div>
+        </aside>
+
+        <main class="flex-1 p-6 h-screen overflow-y-auto relative">
+            <button id="toggle-sidebar-btn" class="absolute top-6 left-6 z-20 p-2 bg-[var(--mid-blue)] rounded-md hover:bg-[var(--light-blue)]">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+            </button>
+            <div class="card p-6 md:p-8 flex flex-col h-full">
+                <div class="mb-8">
+                    <h2 class="text-xl font-semibold mb-2">1. Pilih Bangunan dari Peta</h2>
+                    <div class="relative">
+                        <div id="map" class="w-full h-[55vh] map-container"></div>
+                        <div id="loading-overlay" class="rounded-lg"><div class="loading-spinner"></div></div>
+                    </div>
+                </div>
+                <div id="detail-section" class="hidden flex-1 flex flex-col">
+                    <div class="mb-8">
+                        <h2 class="text-xl font-semibold mb-2">2. Tampilan Struktur Bangunan</h2>
+                        <div id="struktur-container" class="w-full h-[40vh] threejs-container bg-black/20"></div>
+                    </div>
+                    <div class="flex-1 flex flex-col">
+                        <h2 class="text-xl font-semibold mb-2">3. Analisis Voxel Berbasis Peraturan</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1"> 
+                            <div id="voxel-container" class="w-full min-h-0 threejs-container bg-black/20 md:col-span-2"></div>
+                            <div id="analysis-panel" class="card p-4 overflow-y-auto">
+                                <h3 class="text-lg font-bold mb-2 border-b border-gray-600 pb-2">Hasil Analisis</h3>
+                                <div id="analysis-content" class="text-sm space-y-2">
+                                    <p class="text-gray-400">Data analisis akan muncul di sini.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <div id="rules-modal" class="hidden fixed inset-0 bg-black/70 flex justify-center items-center z-50 p-4">
+        <div class="card p-8 rounded-lg shadow-xl max-w-md w-full text-center space-y-4">
+            <h3 class="text-2xl font-bold text-[var(--accent-blue)]">Konfirmasi Aturan Zonasi</h3>
+            <p class="text-gray-300">
+             
+            </p>
+            <div class="text-left bg-black/20 p-4 rounded-md">
+                <p><strong>KDB Maksimum:</strong> <span id="modal-kdb-val" class="font-mono text-yellow-400">60</span> %</p>
+                <p><strong>Faktor Pengali (KLB):</strong> <span id="modal-klb-val" class="font-mono text-yellow-400">2.4</span> x</p>
+            </div>
+            <p class="text-xs text-gray-400">
+
+            </p>
+            <button id="confirm-rules-btn" class="btn-primary w-full mt-4">Lanjutkan Analisis</button>
+        </div>
+    </div>
+
+    <div id="voxel-detail-modal" class="hidden fixed inset-0 bg-black/70 flex justify-center items-center z-50 p-4">
+        <div class="card p-6 rounded-lg shadow-xl max-w-sm w-full text-left space-y-3">
+            <div class="flex justify-between items-center">
+                <h3 class="text-xl font-bold text-[var(--accent-blue)]">Detail Voxel</h3>
+                <button id="close-voxel-modal-btn" class="text-gray-400 hover:text-white">&times;</button>
+            </div>
+            <div id="voxel-details-content" class="text-gray-300 space-y-2 text-sm">
+            </div>
+        </div>
+    </div>
+    <script>
+    mapboxgl.accessToken = 'API MAPBOX USE!';
+    const centerLon = 107.6155;
+    const centerLat = -6.9105;
+    let map;
+
+    let sceneStruktur, cameraStruktur, rendererStruktur, controlsStruktur;
+    let sceneVoxel, cameraVoxel, rendererVoxel, controlsVoxel;
+
+    let allGeneratedVoxels = [];
+    let selectedFeatures = [];
+    const MAX_SELECTIONS = 10;
+
+    function formatRupiah(angka) {
+        return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka);
+    }
+
+    function performDynamicCalculation(feature) {
+        const klb_aturan = parseFloat(document.getElementById('klb-input').value);
+        const tinggiLantai = parseFloat(document.getElementById('tinggi-lantai-input').value);
+        const kdb_aturan = parseFloat(document.getElementById('kdb-input').value) / 100;
+
+        if (!feature) return { jumlahLantaiMaks: 0, tinggiBangunanMaks: 0, luasDasarBangunan: 0, kdb: 0, klb: 0, tinggiAsli: 0, tinggiEkspansi: 0, isViolated: false, jumlahLantaiMaks_aturan: 0 };
+        
+        const props = feature.properties;
+        const tinggiAsli = props.extrusion_height || 10;
+        const jumlahLantaiAsli = Math.round(tinggiAsli / tinggiLantai);
+        const jumlahLantaiMaks_aturan = (kdb_aturan > 0) ? Math.floor(klb_aturan / kdb_aturan) : 0;
+        const tinggiBangunanMaks_aturan = jumlahLantaiMaks_aturan * tinggiLantai;
+        const tinggiEkspansi = Math.max(0, tinggiBangunanMaks_aturan - tinggiAsli);
+        const isViolated = jumlahLantaiAsli > jumlahLantaiMaks_aturan;
+        const mainPolygon = turf.polygon(feature.geometry.type === 'Polygon' ? feature.geometry.coordinates : feature.geometry.coordinates[0]);
+        const luasDasarBangunan = turf.area(mainPolygon);
+        
+        return { 
+            jumlahLantaiMaks: jumlahLantaiMaks_aturan, 
+            tinggiBangunanMaks: tinggiBangunanMaks_aturan, 
+            luasDasarBangunan, 
+            kdb: kdb_aturan, 
+            klb: klb_aturan, 
+            tinggiAsli,
+            tinggiEkspansi,
+            isViolated,
+            jumlahLantaiAsli
+        };
+    }
+
+    function calculateNetCarbonSink(feature) {
+        const emisiTahunan = Math.random() * (3.0 - 2.5) + 2.5;
+        const penyerapanKarbon = 0; 
+        const netCarbon = emisiTahunan - penyerapanKarbon;
+        return { netCarbon };
+    }
+    function createDataDrivenVoxels(feature) {
+        const hargaTanah = parseFloat(document.getElementById('harga-tanah-input').value);
+        const biayaKonstruksi = parseFloat(document.getElementById('biaya-konstruksi-input').value);
+        const tinggiLantai = parseFloat(document.getElementById('tinggi-lantai-input').value);
+        const voxelSize = parseFloat(document.getElementById('voxel-size-input').value) || 1.0;
+        const voxelVolume = voxelSize * voxelSize * voxelSize;
+        const voxelArea = voxelSize * voxelSize;
+        const { jumlahLantaiMaks, tinggiBangunanMaks, luasDasarBangunan, kdb, klb, tinggiAsli, tinggiEkspansi, isViolated, jumlahLantaiAsli } = performDynamicCalculation(feature);
+        const { netCarbon } = calculateNetCarbonSink(feature);
+        const jumlahLantaiBasement = Math.floor(jumlahLantaiMaks / 4);
+        const kedalamanBasement = jumlahLantaiBasement * tinggiLantai;
+        const calculation = { luasLahan: luasDasarBangunan, kdb, klb, jumlahLantaiMaks, tinggiBangunanMaks, netCarbonSink: netCarbon, tinggiAsli, kedalamanBasement, tinggiEkspansi, isViolated, jumlahLantaiAsli };
+        const center = turf.centroid(feature).geometry.coordinates;
+        const scale = 111320 * Math.cos(center[1] * Math.PI / 180);
+        const mainPolygon = turf.polygon(feature.geometry.type === 'Polygon' ? feature.geometry.coordinates : feature.geometry.coordinates[0]);
+        const metricCoords = mainPolygon.geometry.coordinates[0].map(coord => [(coord[0] - center[0]) * scale, (coord[1] - center[1]) * scale * -1]);
+        const metricPolygon = turf.polygon([metricCoords]);
+        const bounds = turf.bbox(metricPolygon);
+        const voxels = [];
+        const stats = { total: 0, totalNilaiLahan: 0, totalNilaiKonstruksi: 0, Basement: 0, Struktur: 0, 'Potensi Ekspansi': 0 };
+        const baseHeight = -kedalamanBasement;
+        let surfaceVoxelCount = 0;
+        if (tinggiBangunanMaks > 0) {
+            for (let z = 0; z < tinggiBangunanMaks; z += voxelSize) {
+                for (let x = bounds[0]; x < bounds[2]; x += voxelSize) {
+                    for (let y = bounds[1]; y < bounds[3]; y += voxelSize) {
+                        if (turf.booleanPointInPolygon([x, y], metricPolygon)) surfaceVoxelCount++;
+                    }
+                }
+            }
+        }
+        const carbonPerVoxel = surfaceVoxelCount > 0 ? netCarbon / surfaceVoxelCount : 0;
+        if (tinggiBangunanMaks > 0 || kedalamanBasement > 0) {
+            for (let z = baseHeight; z < tinggiBangunanMaks; z += voxelSize) {
+                for (let x = bounds[0]; x < bounds[2]; x += voxelSize) {
+                    for (let y = bounds[1]; y < bounds[3]; y += voxelSize) {
+                        if (turf.booleanPointInPolygon([x, y], metricPolygon)) {
+                            let voxelData = { position: [x, z + voxelSize / 2, y], type: '', color: [], carbonValue: 0, floodRisk: 0, propertyValue: 0 };
+                            if (z < 0) {
+                                voxelData.type = 'Basement';
+                                voxelData.color = [0.1, 0.2, 0.8];
+                                voxelData.propertyValue = biayaKonstruksi * voxelVolume;
+                                voxelData.floodRisk = Math.random() * 0.2 + 0.7;
+                            } else if (z < tinggiAsli) {
+                                voxelData.type = 'Struktur';
+                                voxelData.color = [0.5, 0.5, 0.5];
+                                voxelData.propertyValue = (z < tinggiLantai) ? (biayaKonstruksi * voxelVolume) + (hargaTanah * voxelArea) : (biayaKonstruksi * voxelVolume);
+                                voxelData.floodRisk = (z < tinggiLantai) ? Math.random() * 0.2 + 0.2 : 0;
+                                voxelData.carbonValue = carbonPerVoxel;
+                            } else {
+                                voxelData.type = 'Potensi Ekspansi';
+                                voxelData.color = [0.9, 0.9, 0.2];
+                                voxelData.propertyValue = biayaKonstruksi * voxelVolume;
+                                voxelData.floodRisk = 0;
+                                voxelData.carbonValue = carbonPerVoxel;
+                            }
+                            voxels.push(voxelData);
+                            stats.total++;
+                            stats[voxelData.type] = (stats[voxelData.type] || 0) + 1;
+                            if (z >= 0 && z < tinggiLantai) stats.totalNilaiLahan += hargaTanah * voxelArea;
+                            stats.totalNilaiKonstruksi += biayaKonstruksi * voxelVolume;
+                        }
+                    }
+                }
+            }
+        }
+        return { voxels, stats, calculation };
+    }
+    function renderTampilanStruktur(feature) {
+        sceneStruktur.clear();
+        sceneStruktur.add(new THREE.AmbientLight(0xcccccc));
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(50, 100, 75);
+        sceneStruktur.add(light);
+        const props = feature.properties;
+        const tinggiLantai = parseFloat(document.getElementById('tinggi-lantai-input').value);
+        const { tinggiBangunanMaks, tinggiAsli, tinggiEkspansi } = performDynamicCalculation(feature);
+        const shape = new THREE.Shape();
+        const center = turf.centroid(feature).geometry.coordinates;
+        const scale = 111320 * Math.cos(center[1] * Math.PI / 180);
+        const mainPolygon = turf.polygon(feature.geometry.type === 'Polygon' ? feature.geometry.coordinates : feature.geometry.coordinates[0]);
+        mainPolygon.geometry.coordinates[0].forEach((coord, idx) => {
+            const x = (coord[0] - center[0]) * scale;
+            const y = (coord[1] - center[1]) * scale * -1;
+            if (idx === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
+        });
+        const extrudeSettings = { depth: 8, bevelEnabled: false };
+        extrudeSettings.depth = tinggiLantai;
+        const geomBasement = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        const matBasement = new THREE.MeshStandardMaterial({ color: 0xFF8C00 });
+        const meshBasement = new THREE.Mesh(geomBasement, matBasement);
+        meshBasement.rotation.x = -Math.PI / 2;
+        meshBasement.position.y = -tinggiLantai;
+        sceneStruktur.add(meshBasement);
+        extrudeSettings.depth = tinggiAsli;
+        const geomSurface = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        const matSurface = new THREE.MeshStandardMaterial({ color: 0x1E90FF });
+        const meshSurface = new THREE.Mesh(geomSurface, matSurface);
+        meshSurface.rotation.x = -Math.PI / 2;
+        meshSurface.position.y = 0;
+        sceneStruktur.add(meshSurface);
+        if (tinggiEkspansi > 0) {
+            extrudeSettings.depth = tinggiEkspansi;
+            const geomExpansion = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            const matExpansion = new THREE.MeshStandardMaterial({ color: 0xFFD700, transparent: true, opacity: 0.7 });
+            const meshExpansion = new THREE.Mesh(geomExpansion, matExpansion);
+            meshExpansion.rotation.x = -Math.PI / 2;
+            meshExpansion.position.y = tinggiAsli;
+            sceneStruktur.add(meshExpansion);
+        }
+        cameraStruktur.position.set(80, 80, 80);
+        controlsStruktur.target.set(0, 0, 0);
+        controlsStruktur.update();
+        rendererStruktur.render(sceneStruktur, cameraStruktur);
+    }
+
+    function renderVoxelizedBuilding(voxels, offsetX, buildingIndex) {
+        const voxelSize = parseFloat(document.getElementById('voxel-size-input').value) || 1.0;
+        if (voxels.length === 0) return;
+        voxels.forEach(v => { v.buildingIndex = buildingIndex; allGeneratedVoxels.push(v); });
+        const instancedMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial(), voxels.length);
+        const dummy = new THREE.Object3D(), color = new THREE.Color();
+        const voxelGap = 0.98;
+        for (let i = 0; i < voxels.length; i++) {
+            const voxel = voxels[i];
+            dummy.position.set(voxel.position[0] + offsetX, voxel.position[1], voxel.position[2]);
+            dummy.scale.set(voxelSize * voxelGap, voxelSize * voxelGap, voxelSize * voxelGap);
+            dummy.updateMatrix();
+            instancedMesh.setMatrixAt(i, dummy.matrix);
+            color.setRGB(voxel.color[0], voxel.color[1], voxel.color[2]);
+            instancedMesh.setColorAt(i, color);
+        }
+        instancedMesh.instanceMatrix.needsUpdate = true;
+        instancedMesh.instanceColor.needsUpdate = true;
+        instancedMesh.userData.buildingIndex = buildingIndex;
+        sceneVoxel.add(instancedMesh);
+    }
+
+    function createDetailHtml(stats, calculation, index) {
+        let html = '';
+        if (selectedFeatures.length > 1) {
+            html += `<button id="back-to-summary" class="text-sm text-cyan-400 hover:underline mb-2">&larr; Kembali ke Ringkasan</button>`;
+            html += `<h4 class="font-bold text-lg mb-1">Detail Bangunan ${index + 1}</h4>`;
+        }
+        let carbonClassification = 'Netral', carbonColorClass = 'text-gray-400';
+        if (calculation.netCarbonSink < -20) { carbonClassification = 'Penyerap Karbon Kuat'; carbonColorClass = 'text-lime-400'; } 
+        else if (calculation.netCarbonSink < 0) { carbonClassification = 'Penyerap Karbon Lemah'; carbonColorClass = 'text-green-400'; } 
+        else if (calculation.netCarbonSink > 20) { carbonClassification = 'Sumber Karbon Kuat'; carbonColorClass = 'text-red-600'; } 
+        else if (calculation.netCarbonSink > 0) { carbonClassification = 'Sumber Karbon Lemah'; carbonColorClass = 'text-red-400'; }
+        if (calculation) {
+            html += `<div class="mb-4 space-y-1"><h4 class="font-bold text-[var(--accent-blue)]">Parameter</h4>`;
+            html += `<div class="analysis-item"><span>Luas Tapak Bangunan</span><span class="font-mono">${calculation.luasLahan.toFixed(2)} m²</span></div>`;
+            html += `<div class="analysis-item"><span>KDB / KLB Aturan</span><span class="font-mono">${(calculation.kdb * 100).toFixed(0)}% / ${calculation.klb.toFixed(2)}</span></div></div>`;
+            html += `<div class="mb-4 space-y-1"><h4 class="font-bold text-[var(--accent-blue)]">Hasil Perhitungan</h4>`;
+            if (calculation.isViolated) {
+                html += `<div class="p-3 rounded-md bg-red-500/20 text-red-400 border border-red-500/30 text-center">
+                            <div class="font-bold">⚠️ Bangunan Eksisting Melanggar KLB</div>
+                            <div class="text-xs italic mt-1">Lantai saat ini (${calculation.jumlahLantaiAsli}) > Batas aturan (${calculation.jumlahLantaiMaks})</div>
+                        </div>`;
+            }
+            html += `<div class="analysis-item"><span>Tinggi Asli Bangunan</span><span class="font-mono">${calculation.tinggiAsli.toFixed(2)} m</span></div>`;
+            html += `<div class="analysis-item flex-col items-start">
+                        <div class="w-full flex justify-between"><span>Potensi Tinggi Ekspansi</span><span class="font-mono text-yellow-400">${calculation.tinggiEkspansi.toFixed(2)} m</span></div>
+                        <div class="w-full text-right text-xs text-gray-500 italic">(Tinggi Total Aturan - Tinggi Asli)</div>
+                    </div>`;
+            html += `<div class="analysis-item flex-col items-start">
+                        <div class="w-full flex justify-between"><span>Tinggi Total Sesuai Aturan</span><span class="font-mono">${calculation.tinggiBangunanMaks.toFixed(2)} m</span></div>
+                        <div class="w-full text-right text-xs text-gray-500 italic">floor(KLB/KDB) × T. per Lantai</div>
+                    </div>`;
+            html += `<div class="analysis-item flex-col items-start">
+                        <div class="w-full flex justify-between"><span>Lantai Total Sesuai Aturan</span><span class="font-mono">${calculation.jumlahLantaiMaks}</span></div>
+                        <div class="w-full text-right text-xs text-gray-500 italic">floor(KLB / KDB)</div>
+                    </div>`;
+            html += `<div class="analysis-item flex-col items-start"><div class="w-full flex justify-between"><span>Kedalaman Basement</span><span class="font-mono">${calculation.kedalamanBasement.toFixed(2)} m</span></div><div class="w-full text-right text-xs text-gray-500 italic">floor(Lantai Maks / 4) × T. per Lantai</div></div>`;
+            html += `<div class="analysis-item flex-col items-start"><div class="w-full flex justify-between"><span>Net Carbon</span><span class="font-mono ${carbonColorClass}">${calculation.netCarbonSink.toFixed(2)} Ton C/thn</span></div><div class="w-full text-right text-xs font-semibold ${carbonColorClass}">${carbonClassification}</div></div>`;
+        }
+        if (stats && stats.total > 0) {
+            html += `</div><div class="mb-4 space-y-1"><div class="flex flex-col items-start"><h4 class="font-bold text-[var(--accent-blue)]">Komposisi Voxel</h4><div class="w-full text-left text-xs text-gray-500 italic mb-1">(Jml Voxel Tipe / Total Voxel) × 100%</div></div>`;
+            for (const key in stats) {
+                if (stats[key] > 0 && !['total', 'totalNilaiLahan', 'totalNilaiKonstruksi'].includes(key)) {
+                    const percentage = ((stats[key] / stats.total) * 100).toFixed(1);
+                    let colorVar = 'var(--color-struktur)';
+                    if (key.includes('Basement')) colorVar = '#1E90FF';
+                    if (key.includes('Ekspansi')) colorVar = '#FFFF33';
+                    html += `<div class="analysis-item"><div class="flex items-center"><span class="w-3 h-3 rounded-full mr-2" style="background-color: ${colorVar};"></span><span>${key}</span></div><span class="font-semibold">${percentage}%</span></div>`;
+                }
+            }
+            html += `<div class="border-t border-gray-600 pt-2 mt-2 flex justify-between"><strong>Total Voxel</strong><strong>${stats.total}</strong></div></div>`;
+            html += `<div class="mt-4 space-y-1"><h4 class="font-bold text-[var(--accent-blue)]">Analisis Nilai Properti</h4>`;
+            const totalNilai = stats.totalNilaiLahan + stats.totalNilaiKonstruksi;
+            html += `<div class="analysis-item"><span>Total Nilai Tapak</span><span class="font-mono">${formatRupiah(stats.totalNilaiLahan)}</span></div>`;
+            html += `<div class="analysis-item"><span>Total Nilai Konstruksi</span><span class="font-mono">${formatRupiah(stats.totalNilaiKonstruksi)}</span></div>`;
+            html += `<div class="border-t border-gray-600 pt-2 mt-2 flex justify-between text-base flex-col items-end"><div class="w-full flex justify-between"><strong>Estimasi Total</strong><strong>${formatRupiah(totalNilai)}</strong></div><div class="w-full text-right text-xs text-gray-500 italic">(Total Tapak + Total Konstruksi)</div></div>`;
+            html += `</div>`;
+        }
+        return html;
+    }
+    function updateAnalysisPanel(view = 'summary', detailIndex = -1) {
+        const analysisContent = document.getElementById('analysis-content');
+        if (selectedFeatures.length === 1) {
+            const {stats, calculation} = createDataDrivenVoxels(selectedFeatures[0].feature);
+            analysisContent.innerHTML = createDetailHtml(stats, calculation, 0);
+        } else if (selectedFeatures.length > 1 && view === 'detail' && detailIndex > -1) {
+            const { stats, calculation } = createDataDrivenVoxels(selectedFeatures[detailIndex].feature);
+            analysisContent.innerHTML = createDetailHtml(stats, calculation, detailIndex);
+        } else if (selectedFeatures.length > 1) {
+            let totalLuasTapak = 0, totalEstimasiNilai = 0;
+            selectedFeatures.forEach(item => {
+                const { stats, calculation } = createDataDrivenVoxels(item.feature);
+                totalLuasTapak += calculation.luasLahan;
+                totalEstimasiNilai += stats.totalNilaiLahan + stats.totalNilaiKonstruksi;
+            });
+            let analysisHTML = `<div class="mb-4 space-y-1"><h4 class="font-bold text-[var(--accent-blue)]">Ringkasan Analisis</h4>`;
+            analysisHTML += `<div class="analysis-item"><span>Bangunan Dipilih</span><span class="font-mono">${selectedFeatures.length} / ${MAX_SELECTIONS}</span></div>`;
+            analysisHTML += `<div class="analysis-item"><span>Total Luas Tapak</span><span class="font-mono">${totalLuasTapak.toFixed(2)} m²</span></div>`;
+            analysisHTML += `<div class="analysis-item"><span>Estimasi Nilai Total</span><span class="font-mono">${formatRupiah(totalEstimasiNilai)}</span></div></div>`;
+            analysisHTML += `<div class="space-y-2"><h4 class="font-bold text-[var(--accent-blue)]">Pilih untuk Detail</h4>`;
+            selectedFeatures.forEach((item, index) => {
+                analysisHTML += `<button data-index="${index}" class="view-detail-btn w-full text-left p-2 rounded-md bg-black/20 hover:bg-black/40">Bangunan ${index + 1}</button>`;
+            });
+            analysisHTML += `</div>`;
+            analysisContent.innerHTML = analysisHTML;
+        } else {
+            analysisContent.innerHTML = `<p class="text-gray-400">Pilih bangunan di peta untuk memulai.</p>`;
+        }
+        document.querySelectorAll('.view-detail-btn').forEach(btn => {
+            btn.addEventListener('click', () => updateAnalysisPanel('detail', parseInt(btn.dataset.index)));
+        });
+        const backBtn = document.getElementById('back-to-summary');
+        if(backBtn) backBtn.addEventListener('click', () => updateAnalysisPanel('summary'));
+    }
+
+    function runAllAnalyses() {
+        sceneVoxel.clear();
+        sceneStruktur.clear();
+        allGeneratedVoxels = [];
+        sceneVoxel.add(new THREE.AmbientLight(0xcccccc));
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(50, 100, 75);
+        sceneVoxel.add(light);
+        if (selectedFeatures.length === 0) {
+            document.getElementById('detail-section').classList.add('hidden');
+            updateAnalysisPanel();
+            return;
+        }
+        document.getElementById('detail-section').classList.remove('hidden');
+        let totalOffset = 0;
+        selectedFeatures.forEach((item, index) => {
+            const { voxels } = createDataDrivenVoxels(item.feature);
+            const bbox = turf.bbox(item.feature);
+            const buildingWidth = (bbox[2] - bbox[0]) * 111320 * Math.cos(bbox[1] * Math.PI / 180);
+            renderVoxelizedBuilding(voxels, totalOffset, index);
+            totalOffset += buildingWidth + 30;
+            if (index === 0) renderTampilanStruktur(item.feature);
+        });
+        // --- PERBAIKAN POSISI KAMERA ---
+        const cameraFocusX = (totalOffset - 30) / 2; // Hitung titik tengah dari semua bangunan
+        const { tinggiBangunanMaks } = performDynamicCalculation(selectedFeatures[0].feature);
+        
+        // Atur target kamera ke tengah secara horizontal dan setengah tinggi bangunan pertama secara vertikal
+        controlsVoxel.target.set(cameraFocusX, tinggiBangunanMaks / 2, 0); 
+        
+        // Posisikan kamera sedikit lebih jauh dan lebih tinggi untuk tampilan awal yang lebih baik
+        cameraVoxel.position.set(cameraFocusX, tinggiBangunanMaks, 150); 
+        
+        controlsVoxel.update();
+        // --- AKHIR PERBAIKAN ---
+
+        updateAnalysisPanel();
+        rendererVoxel.render(sceneVoxel, cameraVoxel);
+    }
+
+    function initializeVoxelInteraction() {
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const voxelContainer = document.getElementById('voxel-container');
+        const modal = document.getElementById('voxel-detail-modal');
+        const modalContent = document.getElementById('voxel-details-content');
+        const closeModalBtn = document.getElementById('close-voxel-modal-btn');
+        closeModalBtn.addEventListener('click', () => modal.classList.add('hidden'));
+        voxelContainer.addEventListener('click', (event) => {
+            const rect = voxelContainer.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(mouse, cameraVoxel);
+            const instancedMeshes = sceneVoxel.children.filter(c => c.isInstancedMesh);
+            if (!instancedMeshes.length) return;
+            const intersects = raycaster.intersectObjects(instancedMeshes);
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+                const instanceId = intersect.instanceId;
+                const mesh = intersect.object;
+                const buildingIndex = mesh.userData.buildingIndex;
+                let voxelIndex = 0;
+                for(let i = 0; i < buildingIndex; i++) {
+                    const prevMesh = sceneVoxel.children.find(m => m.userData.buildingIndex === i);
+                    if(prevMesh) voxelIndex += prevMesh.count;
+                }
+                voxelIndex += instanceId;
+                const voxelData = allGeneratedVoxels[voxelIndex];
+                if (voxelData) {
+                    let carbonStatus = 'Netral', carbonColorClass = 'text-gray-400';
+                    if (voxelData.carbonValue < 0) { carbonStatus = 'Penyerap Karbon'; carbonColorClass = 'text-green-400'; } 
+                    else if (voxelData.carbonValue > 0) { carbonStatus = 'Sumber Karbon'; carbonColorClass = 'text-red-400'; }
+                    let contentHTML = `
+                        <div class="analysis-item"><span>Tipe Voxel</span><span class="font-semibold">${voxelData.type}</span></div>
+                        <div class="analysis-item"><span>Nilai Properti</span><span class="font-mono">${formatRupiah(voxelData.propertyValue)}</span></div>
+                        <div class="analysis-item"><span>Risiko Banjir</span><span class="font-mono text-cyan-400">${(voxelData.floodRisk * 100).toFixed(1)} %</span></div>
+                        <div class="analysis-item flex-col items-start">
+                            <div class="w-full flex justify-between">
+                                <span>Kontribusi Karbon</span>
+                                <span class="font-mono ${carbonColorClass}">${voxelData.carbonValue.toFixed(4)}</span>
+                            </div>
+                            <div class="w-full text-right text-xs font-semibold ${carbonColorClass}">${carbonStatus}</div>
+                        </div>
+                    `;
+                    modalContent.innerHTML = contentHTML;
+                    modal.classList.remove('hidden');
+                }
+            }
+        });
+    }
+    function initializeMap() {
+        map = new mapboxgl.Map({
+            container: 'map', style: 'mapbox://styles/mapbox/dark-v11', center: [centerLon, centerLat],
+            zoom: 15, pitch: 50, bearing: -45, antialias: true
+        });
+        map.on('load', () => {
+            map.addSource('Buildings', { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, generateId: true });
+            map.addLayer({'id': 'Buildings-surface', 'type': 'fill-extrusion', 'source': 'Buildings',
+                'paint': {
+                    'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'hover'], false], '#00A6FB', '#415A77'],
+                    'fill-extrusion-height': ['get', 'extrusion_height'], 'fill-extrusion-base': ['get', 'base_height'], 'fill-extrusion-opacity': 0.9
+                }
+            });
+            loadAllData();
+            map.on('click', 'Buildings-surface', (e) => {
+                if (!e.features.length) return;
+                const clickedFeature = e.features[0];
+                const isAlreadySelected = selectedFeatures.some(item => item.id === clickedFeature.id);
+                if (isAlreadySelected) {
+                    alert('Bangunan ini sudah dipilih.');
+                    return;
+                }
+                if (selectedFeatures.length >= MAX_SELECTIONS) {
+                    alert(`Anda hanya dapat memilih maksimal ${MAX_SELECTIONS} bangunan.`);
+                    return;
+                }
+                selectedFeatures.push({id: clickedFeature.id, feature: clickedFeature});
+                document.getElementById('modal-kdb-val').textContent = document.getElementById('kdb-input').value;
+                document.getElementById('modal-klb-val').textContent = document.getElementById('klb-input').value;
+                document.getElementById('rules-modal').classList.remove('hidden');
+            });
+            let hoveredBuildingId = null;
+            map.on('mousemove', 'Buildings-surface', (e) => {
+                map.getCanvas().style.cursor = 'pointer';
+                if (e.features.length > 0) {
+                    if (hoveredBuildingId !== null) map.setFeatureState({ source: 'Buildings', id: hoveredBuildingId }, { hover: false });
+                    hoveredBuildingId = e.features[0].id;
+                    map.setFeatureState({ source: 'Buildings', id: hoveredBuildingId }, { hover: true });
+                }
+            });
+            map.on('mouseleave', 'Buildings-surface', () => {
+                map.getCanvas().style.cursor = '';
+                if (hoveredBuildingId !== null) map.setFeatureState({ source: 'Buildings', id: hoveredBuildingId }, { hover: false });
+                hoveredBuildingId = null;
+            });
+        });
+    }
+            
+    function initializeThreeJSView(containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) { console.error(`Container with id ${containerId} not found.`); return; }
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1B263B);
+        const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 5000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        container.innerHTML = '';
+        container.appendChild(renderer.domElement);
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        const animate = () => { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); };
+        animate();
+        window.addEventListener('resize', () => {
+            if(container.clientWidth > 0 && container.clientHeight > 0) {
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            }
+        });
+        return { scene, camera, renderer, controls };
+    }
+
+    async function loadAllData() {
+        document.getElementById('loading-overlay').style.display = 'flex';
+        try {
+            const response = await fetch('/get_emission_data');
+            if (!response.ok) throw new Error(`Server merespons dengan status error: ${response.status}`);
+            const data = await response.json();
+            const buildingDataString = data.sumurbandung || data.buildings;
+            if (buildingDataString && typeof buildingDataString === 'string') {
+                let buildingsData = JSON.parse(buildingDataString);
+                if (buildingsData && Array.isArray(buildingsData.features)) {
+                    buildingsData.features.forEach((feature, index) => {
+                        feature.id = index;
+                        feature.properties.base_height = feature.properties.base_height || 0;
+                        feature.properties.extrusion_height = feature.properties.extrusion_height || 10;
+                    });
+                    map.getSource('Buildings').setData(buildingsData);
+                } else { throw new Error("Format data JSON tidak valid."); }
+            } else { throw new Error("Data bangunan tidak ditemukan dari server."); }
+        } catch (error) {
+            console.error('Gagal memuat data:', error);
+            alert('Gagal memuat data. Detail: ' + error.message);
+        } finally {
+            document.getElementById('loading-overlay').style.display = 'none';
+        }
+    }
+            
+    document.addEventListener('DOMContentLoaded', () => {
+        initializeMap();
+        const strukturView = initializeThreeJSView('struktur-container' );
+        sceneStruktur = strukturView.scene;
+        cameraStruktur = strukturView.camera;
+        rendererStruktur = strukturView.renderer;
+        controlsStruktur = strukturView.controls;
+        const voxelView = initializeThreeJSView('voxel-container');
+        sceneVoxel = voxelView.scene;
+        cameraVoxel = voxelView.camera;
+        rendererVoxel = voxelView.renderer;
+        controlsVoxel = voxelView.controls;
+        initializeVoxelInteraction();
+        const modal = document.getElementById('rules-modal');
+        const confirmBtn = document.getElementById('confirm-rules-btn');
+        confirmBtn.addEventListener('click', () => {
+            modal.classList.add('hidden');
+            runAllAnalyses();
+        });
+        document.getElementById('reset-selection-btn').addEventListener('click', () => {
+            selectedFeatures = [];
+            runAllAnalyses();
+        });
+        document.getElementById('update-analysis-btn').addEventListener('click', () => {
+            if (selectedFeatures.length > 0) {
+                runAllAnalyses();
+            } else {
+                alert("Pilih bangunan di peta terlebih dahulu.");
+            }
+        });
+    });
+    </script>
+</body>
+</html>

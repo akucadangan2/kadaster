@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sumur Bandung 3D Cadastre</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #3A1D1C 0%, #4B2320 100%);
+            color: #f5f5f5;
+            margin: 0;
+            overflow-x: hidden;
+        }
+        .sidebar-left, .sidebar-right {
+            background: rgba(58, 29, 28, 0.9);
+            backdrop-filter: blur(10px);
+            transition: transform 0.3s ease;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
+        }
+        .sidebar-left-hidden { transform: translateX(-100%); }
+        .sidebar-right-hidden { transform: translateX(100%); }
+        .content {
+            transition: margin-left 0.3s ease, margin-right 0.3s ease, width 0.3s ease;
+            box-sizing: border-box;
+        }
+        .map-container, .cesium-container {
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 90, 73, 0.3);
+            height: 70vh;
+            width: 100% !important;
+            max-width: 100%;
+        }
+        .nav-link {
+            transition: all 0.3s ease;
+            border-radius: 10px;
+        }
+        .nav-link:hover {
+            background: linear-gradient(90deg, #FF5A49, #FFD700);
+            color: #fff;
+            transform: translateX(5px);
+        }
+        .btn-primary {
+            background: linear-gradient(45deg, #FF5A49, #FFD700);
+            border: none;
+            border-radius: 20px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            box-shadow: 0 6px 15px rgba(255, 90, 73, 0.5);
+            transform: scale(1.05);
+        }
+        .input-field {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 90, 73, 0.3);
+            border-radius: 10px;
+            color: #fff;
+            transition: all 0.3s ease;
+        }
+        .input-field:focus {
+            border-color: #FF5A49;
+            box-shadow: 0 0 10px rgba(255, 90, 73, 0.5);
+        }
+        .sidebar-toggle {
+            background: linear-gradient(45deg, #FF5A49, #FFD700);
+            box-shadow: 0 0 10px rgba(255, 90, 73, 0.3);
+        }
+        .sidebar-left-toggle-hidden { transform: rotate(180deg); }
+        .sidebar-right-toggle-hidden { transform: rotate(180deg); }
+        .card {
+            background: rgba(58, 29, 28, 0.9);
+            border-radius: 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+            width: 100%;
+        }
+        .badge {
+            background: #FF5A49;
+            color: #fff;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        #sidebar-left-toggle-closed, #sidebar-right-toggle-closed {
+            display: none;
+            transition: opacity 0.3s ease;
+        }
+        .sidebar-left-hidden ~ #sidebar-left-toggle-closed,
+        .sidebar-right-hidden ~ #sidebar-right-toggle-closed {
+            display: block;
+            opacity: 1;
+        }
+        .loading {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div class="flex min-h-screen">
+        <header class="fixed top-0 left-0 right-0 bg-gradient-to-r from-[#3A1D1C] to-[#4B2320] p-4 flex justify-between items-center z-50 shadow-lg">
+            <div class="flex items-center">
+                <h1 class="text-2xl font-bold text-white">Selamat Datang, User!</h1>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div class="relative">
+                    <input type="text" placeholder="Cari..." class="input-field pl-10 pr-4 py-2 rounded-lg w-48 text-sm">
+                    <svg class="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </div>
+                <button class="p-2 rounded-full bg-[#FF5A49] hover:bg-[#FFD700] transition">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                    </svg>
+                </button>
+            </div>
+        </header>
+        <div id="sidebar-left" class="sidebar-left fixed top-16 left-0 h-[calc(100vh-4rem)] w-20 md:w-80 p-4 overflow-y-auto z-40">
+            <button id="sidebar-left-toggle" class="w-full flex justify-center md:justify-end p-2 rounded-full sidebar-toggle mb-4">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                </svg>
+            </button>
+            <div class="md:block hidden">
+                <h3 class="text-xl font-bold text-white mb-6">3D Cadastre</h3>
+                <h4 class="text-sm font-semibold text-gray-300">Konfigurasi</h4>
+                <div class="space-y-4 mt-4">
+                    <div>
+                        <label for="gml_select" class="block text-xs font-medium text-gray-300">Pilih File GML:</label>
+                        <select id="gml_select" class="mt-1 block w-full input-field text-sm" onchange="loadBuildingIds()">
+                            {% for option in gml_options %}
+                                <option value="{{ option }}">{{ option }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="voxel_size" class="block text-xs font-medium text-gray-300">Ukuran Voxel (m):</label>
+                        <input type="number" id="voxel_size" class="mt-1 block w-full input-field text-sm" value="5.0" min="0.1" step="0.1">
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="extrude_enabled" class="rounded border-gray-300 text-[#FF5A49] focus:ring-[#FF5A49]" checked>
+                        <label for="extrude_enabled" class="ml-2 text-xs font-medium text-gray-300">Aktifkan Ekstrusi</label>
+                    </div>
+                    <div>
+                        <label for="extrude_depth" class="block text-xs font-medium text-gray-300">Kedalaman Ekstrusi (m):</label>
+                        <input type="number" id="extrude_depth" class="mt-1 block w-full input-field text-sm" value="30.0" min="0" step="1.0">
+                    </div>
+                    <div>
+                        <label for="new_voxel_z" class="block text-xs font-medium text-gray-300">Tinggi Voxel Baru (m):</label>
+                        <input type="number" id="new_voxel_z" class="mt-1 block w-full input-field text-sm" value="0.0" min="0" step="0.1">
+                    </div>
+                    <div>
+                        <label for="building_ids" class="block text-xs font-medium text-gray-300">Pilih Bangunan:</label>
+                        <select id="building_ids" multiple class="mt-1 block w-full input-field text-sm">
+                            <option value="all">All Buildings</option>
+                        </select>
+                    </div>
+                    <button class="w-full btn-primary text-white py-2 text-sm" onclick="createPolyhedralSurface()">Buat Polyhedral Surface</button>
+                    <a href="/voxel" class="w-full btn-primary text-white py-2 text-sm text-center block">Buat Voxelisasi</a>
+                </div>
+                <h4 class="text-sm font-semibold text-gray-300 mt-6">Navigasi</h4>
+            </div>
+            <ul class="space-y-2">
+                <li><a class="nav-link flex items-center p-2 text-gray-300 hover:text-white" onclick="openTab('map')"><svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg><span class="md:block hidden">Visualisasi Peta</span></a></li>
+                <li><a class="nav-link flex items-center p-2 text-gray-300 hover:text-white" onclick="openTab('penilaian_emisi')"><svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><span class="md:block hidden">Penilaian Emisi</span></a></li>
+                <li><a class="nav-link flex items-center p-2 text-gray-300 hover:text-white" onclick="openTab('visualisasi_emisi')"><svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg><span class="md:block hidden">Visualisasi Emisi</span></a></li>
+                <li><a class="nav-link flex items-center p-2 text-gray-300 hover:text-white" onclick="openTab('polyhedral')"><svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg><span class="md:block hidden">Polyhedral Surface</span></a></li>
+                <li><a class="nav-link flex items-center p-2 text-gray-300 hover:text-white" onclick="openTab('edit_data')"><svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg><span class="md:block hidden">Edit Data</span></a></li>
+            </ul>
+        </div>
+        <button id="sidebar-left-toggle-closed" class="fixed top-16 left-0 p-2 rounded-r-full sidebar-toggle z-40">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7m0 0l-7 7m7-7H3"></path>
+            </svg>
+        </button>
+        <div id="sidebar-right" class="sidebar-right fixed top-16 right-0 h-[calc(100vh-4rem)] w-20 md:w-64 p-4 overflow-y-auto z-40">
+            <button id="sidebar-right-toggle" class="w-full flex justify-center md:justify-start p-2 rounded-full sidebar-toggle mb-4">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l-7 7m0 0l7 7m-7-7h18"></path>
+                </svg>
+            </button>
+            <div class="md:block hidden">
+                <h4 class="text-sm font-semibold text-gray-300">Statistik</h4>
+                <div class="mt-4 space-y-4">
+                    <div class="card p-4">
+                        <span class="badge">Total Data</span>
+                        <p class="text-sm text-gray-300 mt-2">Jumlah Bangunan: <span id="total_buildings">0</span></p>
+                    </div>
+                    <div class="card p-4">
+                        <span class="badge">Emisi</span>
+                        <p class="text-sm text-gray-300 mt-2">Rata-rata Karbon: <span id="avg_carbon">0</span> Ton C/year</p>
+                    </div>
+                    <div class="card p-4">
+                        <span class="badge">Voxelisasi</span>
+                        <p class="text-sm text-gray-300 mt-2">Total Voxel: <span id="total_voxels">0</span></p>
+                    </div>
+                </div>
+            </div>
+            <div class="flex flex-col space-y-2 mt-4">
+                <button class="p-2 rounded-full bg-[#FF5A49] hover:bg-[#FFD700] transition md:hidden">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <button id="sidebar-right-toggle-closed" class="fixed top-16 right-0 p-2 rounded-l-full sidebar-toggle z-40">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 5l-7 7m0 0l7 7m-7-7h18"></path>
+            </svg>
+        </button>
+        <div id="content" class="content ml-20 md:ml-80 mr-20 md:mr-64 pt-20 p-6 transition-all w-[calc(100%-2.5rem)] md:w-[calc(100%-28rem)]">
+            <div id="map" class="tab-content card p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold text-white">Visualisasi Peta</h3>
+                    <select id="map_style" class="input-field text-sm w-40" onchange="loadMap()">
+                        <option value="mapbox://styles/mapbox/dark-v10">Dark</option>
+                        <option value="mapbox://styles/mapbox/light-v10">Light</option>
+                        <option value="mapbox://styles/mapbox/satellite-v9">Satellite</option>
+                        <option value="mapbox://styles/mapbox/streets-v11">Streets</option>
+                    </select>
+                </div>
+                <button class="btn-primary text-white py-2 px-6 text-sm mb-4" onclick="loadMap()">Buat Peta</button>
+                <div id="mapboxMap" class="map-container"></div>
+            </div>
+            <div id="penilaian_emisi" class="tab-content hidden card p-6">
+                <h3 class="text-xl font-bold text-white mb-4">Penilaian Emisi</h3>
+                <table id="penilaian_emisi_table" class="w-full text-sm">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div id="visualisasi_emisi" class="tab-content hidden card p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold text-white">Peta Analisis Emisi Karbon</h3>
+                    <select id="emisi_map_style" class="input-field text-sm w-40" onchange="loadEmisiMap()">
+                        <option value="mapbox://styles/mapbox/dark-v10">Dark</option>
+                        <option value="mapbox://styles/mapbox/light-v10">Light</option>
+                        <option value="mapbox://styles/mapbox/satellite-v9">Satellite</option>
+                        <option value="mapbox://styles/mapbox/streets-v11">Streets</option>
+                    </select>
+                </div>
+                <p class="text-gray-300 mb-4">Visualisasi emisi karbon dengan fokus pada analisis karbon per bangunan. Klik pada bangunan untuk melihat detail.</p>
+                <div id="emisiMapboxMap" class="map-container"></div>
+                <div id="emisi_stats" class="mt-4 card p-4"></div>
+                <div id="emisi_table" class="mt-4 card p-4 max-h-[300px] overflow-y-auto"></div>
+                <h4 class="text-sm font-semibold text-gray-300 mt-6">Legenda Warna Emisi Karbon</h4>
+                <div id="emission_legend" class="grid grid-cols-1 md:grid-cols-5 gap-4 mt-2"></div>
+                <h4 class="text-sm font-semibold text-gray-300 mt-6">Distribusi Emisi Karbon</h4>
+                <div id="emission_chart" class="card p-4"></div>
+            </div>
+            <div id="polyhedral" class="tab-content hidden card p-6">
+                <h3 class="text-xl font-bold text-white mb-4">Polyhedral Surface</h3>
+                <div id="cesiumContainerPolyhedral" class="cesium-container"></div>
+                <a id="download_obj_link" class="text-[#FF5A49] hover:text-[#FFD700] hover:underline mt-4 block">Unduh Polyhedral Surface (.obj)</a>
+            </div>
+            <div id="edit_data" class="tab-content hidden card p-6">
+                <h3 class="text-xl font-bold text-white mb-4">Edit Data</h3>
+                <table id="edit_data_table" class="w-full text-sm">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+                <h4 class="text-sm font-semibold text-gray-300 mt-6">Tambah Atribut Baru</h4>
+                <div class="mt-2 flex space-x-2">
+                    <div>
+                        <label class="block text-sm font-semibold">Nama Kolom Baru:</label>
+                        <input type="text" id="new_column_name" class="w-full p-2 mt-2 rounded bg-gray-800 text-white">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold">Nilai Default:</label>
+                        <input type="text" id="new_column_value" class="w-full p-2 mt-2 rounded bg-gray-800 text-white">
+                    </div>
+                    <button onclick="addColumn()" class="btn-primary mt-8">Tambah Kolom</button>
+                </div>
+                <h4 class="text-sm font-semibold text-gray-300 mt-6">Edit Tinggi Bangunan (Z)</h4>
+                <div class="mt-2 flex space-x-2">
+                    <div>
+                        <label class="block text-sm font-semibold">Pilih Bangunan:</label>
+                        <select id="building_id_z" class="w-full p-2 mt-2 rounded bg-gray-800 text-white"></select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold">Tinggi Baru (meter):</label>
+                        <input type="number" id="new_z_value" value="0.0" step="0.1" class="w-full p-2 mt-2 rounded bg-gray-800 text-white">
+                    </div>
+                    <button onclick="updateZ()" class="btn-primary mt-8">Update Tinggi</button>
+                </div>
+                <h4 class="text-sm font-semibold text-gray-300 mt-6">Edit Data Emisi</h4>
+                <table id="edit_emisi_table" class="w-full text-sm mt-2">
+                    <thead></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        <div id="loading" class="loading">Memproses...</div>
+    </div>
+    <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
+    <script>
+        const mapboxToken = '{{ mapbox_token }}';
+        Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIzYzlkNWQ4YS02NzU4LTRmMmYtOGU1YS03OTY3Zjg5YWE3NjciLCJpZCI6MzM4MTk0LCJpYXQiOjE3NTY5NzkzMzh9._d5DnrrbTxWhHqR66vUXjPeFYqFmk8Pz6GPJ7EZQ3Z4';
+        let cesiumViewer;
+        let mapboxMap;
+        let emisiMapboxMap;
+        let isLeftSidebarOpen = true;
+        let isRightSidebarOpen = true;
+        let geojsonData;
+        let emissionData;
+
+        async function initializeCesium(containerId) {
+            if (!cesiumViewer) {
+                try {
+                    const terrainProvider = await Cesium.createWorldTerrainAsync();
+                    cesiumViewer = new Cesium.Viewer(containerId, {
+                        terrainProvider: terrainProvider,
+                        imageryProvider: new Cesium.IonImageryProvider({ assetId: 2 }),
+                        baseLayerPicker: false,
+                        geocoder: false,
+                        homeButton: false,
+                        sceneModePicker: false,
+                        navigationHelpButton: false,
+                        animation: false,
+                        timeline: false,
+                        sceneMode: Cesium.SceneMode.SCENE3D
+                    });
+                    cesiumViewer.scene.globe.depthTestAgainstTerrain = false;
+                    cesiumViewer.scene.screenSpaceCameraController.minimumZoomDistance = 10;
+                    cesiumViewer.scene.screenSpaceCameraController.maximumZoomDistance = 5000;
+                    console.log('Cesium viewer initialized with terrain and Ion imagery');
+                } catch (error) {
+                    console.error('Error initializing Cesium:', error);
+                    alert('Error initializing Cesium: ' + error.message);
+                }
+            }
+        }
+
+        async function openTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.add('hidden'));
+            document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('bg-gradient-to-r', 'from-[#FF5A49]', 'to-[#FFD700]'));
+            document.getElementById(tabName).classList.remove('hidden');
+            document.querySelector(`[onclick="openTab('${tabName}')"]`).classList.add('bg-gradient-to-r', 'from-[#FF5A49]', 'to-[#FFD700]');
+            if (tabName === 'polyhedral') {
+                await initializeCesium('cesiumContainerPolyhedral');
+            }
+            loadData(tabName);
+            if (window.innerWidth < 768) {
+                toggleLeftSidebar();
+            }
+            setTimeout(() => {
+                if (mapboxMap) mapboxMap.resize();
+                if (emisiMapboxMap) emisiMapboxMap.resize();
+                if (cesiumViewer) cesiumViewer.scene.requestRender();
+            }, 100);
+        }
+
+        function toggleLeftSidebar() {
+            isLeftSidebarOpen = !isLeftSidebarOpen;
+            const sidebar = document.getElementById('sidebar-left');
+            const content = document.getElementById('content');
+            const toggleButton = document.getElementById('sidebar-left-toggle');
+            const toggleButtonClosed = document.getElementById('sidebar-left-toggle-closed');
+            if (isLeftSidebarOpen) {
+                sidebar.classList.remove('sidebar-left-hidden');
+                content.classList.add('md:ml-80');
+                content.classList.remove('ml-20');
+                toggleButton.classList.remove('sidebar-left-toggle-hidden');
+                toggleButtonClosed.style.display = 'none';
+            } else {
+                sidebar.classList.add('sidebar-left-hidden');
+                content.classList.remove('md:ml-80');
+                content.classList.add('ml-20');
+                toggleButton.classList.add('sidebar-left-toggle-hidden');
+                toggleButtonClosed.style.display = 'block';
+            }
+            updateContentWidth();
+            setTimeout(() => {
+                if (mapboxMap) mapboxMap.resize();
+                if (emisiMapboxMap) emisiMapboxMap.resize();
+                if (cesiumViewer) cesiumViewer.scene.requestRender();
+            }, 100);
+        }
+
+        function toggleRightSidebar() {
+            isRightSidebarOpen = !isRightSidebarOpen;
+            const sidebar = document.getElementById('sidebar-right');
+            const content = document.getElementById('content');
+            const toggleButton = document.getElementById('sidebar-right-toggle');
+            const toggleButtonClosed = document.getElementById('sidebar-right-toggle-closed');
+            if (isRightSidebarOpen) {
+                sidebar.classList.remove('sidebar-right-hidden');
+                content.classList.add('md:mr-64');
+                content.classList.remove('mr-20');
+                toggleButton.classList.remove('sidebar-right-toggle-hidden');
+                toggleButtonClosed.style.display = 'none';
+            } else {
+                sidebar.classList.add('sidebar-right-hidden');
+                content.classList.remove('md:mr-64');
+                content.classList.add('mr-20');
+                toggleButton.classList.add('sidebar-right-toggle-hidden');
+                toggleButtonClosed.style.display = 'block';
+            }
+            updateContentWidth();
+            setTimeout(() => {
+                if (mapboxMap) mapboxMap.resize();
+                if (emisiMapboxMap) emisiMapboxMap.resize();
+                if (cesiumViewer) cesiumViewer.scene.requestRender();
+            }, 100);
+        }
+
+        function updateContentWidth() {
+            const content = document.getElementById('content');
+            if (window.innerWidth < 768) {
+                content.style.width = 'calc(100% - 2.5rem)';
+                content.style.marginLeft = '2.5rem';
+                content.style.marginRight = '0';
+            } else {
+                const leftMargin = isLeftSidebarOpen ? 320 : 80;
+                const rightMargin = isRightSidebarOpen ? 256 : 80;
+                content.style.width = `calc(100% - ${leftMargin + rightMargin}px)`;
+                content.style.marginLeft = `${leftMargin}px`;
+                content.style.marginRight = `${rightMargin}px`;
+            }
+        }
+
+        async function loadBuildingIds() {
+            const gmlKey = document.getElementById('gml_select').value;
+            const select = document.getElementById('building_ids');
+            select.innerHTML = '<option value="all">All Buildings</option>';
+            if (gmlKey === 'Voxelisasi Bangunan') {
+                try {
+                    const response = await fetch(`/edit_data/${encodeURIComponent(gmlKey)}`, {
+                        headers: { 'Accept': 'application/json' }
+                    });
+                    const text = await response.text();
+                    console.log('Raw response from /edit_data/Voxelisasi Bangunan:', text);
+                    if (!response.ok) throw new Error(`Failed to fetch building IDs: ${response.status} - ${text}`);
+                    let data;
+                    try {
+                        data = JSON.parse(text.replace(/NaN/g, 'null'));
+                    } catch (e) {
+                        throw new Error(`Invalid JSON response: ${e.message}`);
+                    }
+                    if (data.error) {
+                        console.error('Error loading building IDs:', data.error);
+                        alert('Error loading building IDs: ' + data.error);
+                        return;
+                    }
+                    const buildingIds = data.building_ids || [];
+                    buildingIds.forEach(id => {
+                        const option = document.createElement('option');
+                        option.value = id;
+                        option.text = id;
+                        select.appendChild(option);
+                    });
+                    console.log('Loaded building IDs:', buildingIds);
+                } catch (error) {
+                    console.error('Error fetching building IDs:', error);
+                    alert('Error fetching building IDs: ' + error.message);
+                }
+            }
+        }
+
+        async function loadMap() {
+            const gmlKey = document.getElementById('gml_select').value;
+            const style = document.getElementById('map_style').value;
+            if (!mapboxMap) {
+                mapboxMap = new mapboxgl.Map({
+                    container: 'mapboxMap',
+                    style: style,
+                    center: [107.615, -6.911],
+                    zoom: 15,
+                    pitch: 45,
+                    bearing: 0,
+                    accessToken: mapboxToken
+                });
+            } else {
+                mapboxMap.setStyle(style);
+            }
+            mapboxMap.on('style.load', async () => {
+                try {
+                    if (!geojsonData || geojsonData.gmlKey !== gmlKey) {
+                        const response = await fetch(`/get_geojson/${encodeURIComponent(gmlKey)}`, {
+                            headers: { 'Accept': 'application/json' }
+                        });
+                        if (!response.ok) throw new Error(`Failed to fetch GeoJSON: ${response.status}`);
+                        const text = await response.text();
+                        console.log('Raw response from /get_geojson:', text);
+                        const data = JSON.parse(text.replace(/NaN/g, 'null'));
+                        if (data.error) throw new Error(data.error);
+                        geojsonData = { gmlKey, data };
+                    }
+                    renderMapLayers(geojsonData.data);
+                } catch (error) {
+                    console.error('Error loading map:', error);
+                    alert('Error loading map: ' + error.message);
+                }
+            });
+            setTimeout(() => mapboxMap.resize(), 100);
+        }
+
+        function renderMapLayers(data) {
+            if (!data.features || data.features.length === 0) {
+                alert('No features found in GeoJSON');
+                return;
+            }
+            console.log(`Rendering ${data.features.length} features in map`);
+            if (mapboxMap.getSource('buildings')) {
+                mapboxMap.getSource('buildings').setData(data);
+            } else {
+                mapboxMap.addSource('buildings', { type: 'geojson', data: data });
+                mapboxMap.addLayer({
+                    id: 'buildings-layer',
+                    type: 'fill-extrusion',
+                    source: 'buildings',
+                    paint: {
+                        'fill-extrusion-color': '#FF5A49',
+                        'fill-extrusion-height': ['get', 'extrusion_height'],
+                        'fill-extrusion-base': 0,
+                        'fill-extrusion-opacity': 0.8
+                    }
+                });
+                mapboxMap.on('click', 'buildings-layer', e => {
+                    const props = e.features[0].properties;
+                    const fields = Object.keys(props).filter(col => col !== 'geometry');
+                    const tooltipContent = fields.map(col => `<b>${col}</b>: ${props[col] || 'N/A'}`).join('<br>');
+                    new mapboxgl.Popup()
+                        .setLngLat(e.lngLat)
+                        .setHTML(tooltipContent)
+                        .addTo(mapboxMap);
+                });
+            }
+            mapboxMap.fitBounds(turf.bbox(data), { padding: 30, maxZoom: 16, pitch: 45, duration: 1000 });
+            alert('Peta berhasil dibuat!');
+        }
+
+        async function loadEmisiMap() {
+            const style = document.getElementById('emisi_map_style').value;
+            if (!emisiMapboxMap) {
+                emisiMapboxMap = new mapboxgl.Map({
+                    container: 'emisiMapboxMap',
+                    style: style,
+                    center: [107.615, -6.911],
+                    zoom: 15,
+                    pitch: 45,
+                    bearing: 0,
+                    accessToken: mapboxToken
+                });
+            } else {
+                emisiMapboxMap.setStyle(style);
+            }
+            emisiMapboxMap.on('style.load', async () => {
+                try {
+                    if (!emissionData) {
+                        const response = await fetch('/get_emission_data', {
+                            headers: { 'Accept': 'application/json' }
+                        });
+                        if (!response.ok) throw new Error(`Failed to fetch emission data: ${response.status}`);
+                        const text = await response.text();
+                        console.log('Raw response from /get_emission_data:', text);
+                        emissionData = JSON.parse(text.replace(/NaN/g, 'null'));
+                        console.log('Emission data:', emissionData);
+                        if (emissionData.error) throw new Error(emissionData.error);
+                    }
+                    renderEmissionLayers(emissionData);
+                } catch (error) {
+                    console.error('Error loading visualisasi emisi:', error);
+                    document.getElementById('emisi_stats').innerHTML = `<p class="text-red-400 text-sm">Error: ${error.message}</p>`;
+                    document.getElementById('emission_legend').innerHTML = `<p class="text-red-400 text-sm">Error loading legend: ${error.message}</p>`;
+                }
+            });
+            setTimeout(() => emisiMapboxMap.resize(), 100);
+        }
+
+        function renderEmissionLayers(data) {
+            if (data.error) {
+                document.getElementById('emisi_stats').innerHTML = `<p class="text-red-400 text-sm">Error: ${data.error}</p>`;
+                document.getElementById('emission_legend').innerHTML = `<p class="text-red-400 text-sm">Error loading legend: ${data.error}</p>`;
+                return;
+            }
+            const legend = [
+                { color: '#00FF00', label: 'Carbon Sink Kuat (< -20 Ton C/tahun)', desc: 'Penyerap karbon kuat' },
+                { color: '#32CD32', label: 'Carbon Sink Lemah (< 0 Ton C/tahun)', desc: 'Penyerap karbon lemah' },
+                { color: '#808080', label: 'Netral (0 Ton C/tahun)', desc: 'Tidak ada emisi/netral' },
+                { color: '#FF5A49', label: 'Carbon Source Lemah (> 0 Ton C/tahun)', desc: 'Sumber karbon lemah' },
+                { color: '#8B0000', label: 'Carbon Source Kuat (> 20 Ton C/tahun)', desc: 'Sumber karbon kuat' }
+            ];
+            document.getElementById('emission_legend').innerHTML = legend.map(l => `
+                <div>
+                    <div style="background-color: ${l.color}" class="p-4 rounded-lg text-white text-center h-32 flex flex-col justify-center shadow-lg">
+                        <strong class="text-sm">${l.label}</strong><br><small class="text-xs">${l.desc}</small>
+                    </div>
+                </div>
+            `).join('');
+            console.log('Emission legend rendered');
+            const sources = [
+                { id: 'emisi', data: data.emisi, type: 'fill', paint: { 'fill-color': ['case', ['<', ['get', 'NetCarbonSink'], -20], '#00FF00', ['<', ['get', 'NetCarbonSink'], 0], '#32CD32', ['==', ['get', 'NetCarbonSink'], 0], '#808080', ['<=', ['get', 'NetCarbonSink'], 20], '#FF5A49', '#8B0000'], 'fill-opacity': 0.8, 'fill-outline-color': '#FFD700' } },
+                { id: 'lanpar', data: data.lanpar, type: 'fill', paint: { 'fill-color': ['case', ['<', ['get', 'NetCarbonSink'], -20], '#00FF00', ['<', ['get', 'NetCarbonSink'], 0], '#32CD32', ['==', ['get', 'NetCarbonSink'], 0], '#808080', ['<=', ['get', 'NetCarbonSink'], 20], '#FF5A49', '#8B0000'], 'fill-opacity': 0.5, 'fill-outline-color': '#FFD700' } },
+                { id: 'buildings', data: data.buildings, type: 'fill-extrusion', paint: { 'fill-extrusion-color': ['case', ['<', ['get', 'NetCarbonSink'], -20], '#00FF00', ['<', ['get', 'NetCarbonSink'], 0], '#32CD32', ['==', ['get', 'NetCarbonSink'], 0], '#808080', ['<=', ['get', 'NetCarbonSink'], 20], '#FF5A49', '#8B0000'], 'fill-extrusion-height': ['get', 'extrusion_height'], 'fill-extrusion-base': 0, 'fill-extrusion-opacity': 0.8 } },
+                { id: 'trees', data: data.trees, type: 'circle', paint: { 'circle-color': ['case', ['<', ['get', 'NetCarbonSink'], -20], '#00FF00', ['<', ['get', 'NetCarbonSink'], 0], '#32CD32', ['==', ['get', 'NetCarbonSink'], 0], '#808080', ['<=', ['get', 'NetCarbonSink'], 20], '#FF5A49', '#8B0000'], 'circle-radius': ['*', ['get', 'extrusion_height'], 0.5], 'circle-opacity': 0.7 } },
+                { id: 'sumurbandung', data: data.sumurbandung, type: 'fill-extrusion', paint: { 'fill-extrusion-color': ['case', ['<', ['get', 'NetCarbonSink'], -20], '#00FF00', ['<', ['get', 'NetCarbonSink'], 0], '#32CD32', ['==', ['get', 'NetCarbonSink'], 0], '#808080', ['<=', ['get', 'NetCarbonSink'], 20], '#FF5A49', '#8B0000'], 'fill-extrusion-height': ['get', 'extrusion_height'], 'fill-extrusion-base': 0, 'fill-extrusion-opacity': 0.8 } }
+            ];
+            let totalFeatures = 0;
+            let allBounds = null;
+            sources.forEach(source => {
+                if (source.data) {
+                    const geojson = JSON.parse(source.data.replace(/NaN/g, 'null'));
+                    console.log(`GeoJSON for ${source.id}:`, geojson);
+                    if (!geojson.features || geojson.features.length === 0) {
+                        console.warn(`No features in GeoJSON for ${source.id}`);
+                        document.getElementById('emisi_stats').innerHTML += `<p class="text-yellow-400 text-sm">Warning: No features in ${source.id} data.</p>`;
+                        return;
+                    }
+                    totalFeatures += geojson.features.length;
+                    console.log(`Rendering ${geojson.features.length} features for ${source.id}`);
+                    if (emisiMapboxMap.getSource(source.id)) {
+                        emisiMapboxMap.getSource(source.id).setData(geojson);
+                    } else {
+                        emisiMapboxMap.addSource(source.id, { type: 'geojson', data: geojson });
+                        emisiMapboxMap.addLayer({
+                            id: `${source.id}-layer`,
+                            type: source.type,
+                            source: source.id,
+                            paint: source.paint
+                        });
+                        emisiMapboxMap.on('click', `${source.id}-layer`, e => {
+                            const props = e.features[0].properties;
+                            const coords = e.lngLat;
+                            console.log(`Clicked feature in ${source.id}:`, props);
+                            document.getElementById('emisi_stats').innerHTML = `
+                                <h4 class="text-sm font-semibold text-gray-300">Detail Data</h4>
+                                <p class="text-sm"><strong>ID:</strong> ${props.gml_id || props.BuildingId || 'N/A'}</p>
+                                <p class="text-sm"><strong>Net Carbon:</strong> ${props.NetCarbonSink ? props.NetCarbonSink.toFixed(1) : 'N/A'} Ton C/year</p>
+                                <p class="text-sm"><strong>Status:</strong> ${props.NetCarbonSink < 0 ? 'Carbon Sink' : props.NetCarbonSink === 0 ? 'Neutral' : 'Carbon Source'}</p>
+                                <p class="text-sm"><strong>Coordinates:</strong> Lat: ${coords.lat.toFixed(6)}, Lon: ${coords.lng.toFixed(6)}</p>
+                            `;
+                        });
+                    }
+                    if (source.id === 'buildings' || source.id === 'sumurbandung') {
+                        const bounds = turf.bbox(geojson);
+                        if (isFinite(bounds[0]) && isFinite(bounds[1]) && isFinite(bounds[2]) && isFinite(bounds[3]) && bounds[0] !== bounds[2] && bounds[1] !== bounds[3]) {
+                            if (!allBounds) {
+                                allBounds = bounds;
+                            } else {
+                                allBounds[0] = Math.min(allBounds[0], bounds[0]);
+                                allBounds[1] = Math.min(allBounds[1], bounds[1]);
+                                allBounds[2] = Math.max(allBounds[2], bounds[2]);
+                                allBounds[3] = Math.max(allBounds[3], bounds[3]);
+                            }
+                        } else {
+                            console.warn(`Invalid bounds for ${source.id}:`, bounds);
+                        }
+                    }
+                } else {
+                    console.warn(`No data for ${source.id}`);
+                    document.getElementById('emisi_stats').innerHTML += `<p class="text-yellow-400 text-sm">Warning: No data for ${source.id}.</p>`;
+                }
+            });
+            if (allBounds && isFinite(allBounds[0]) && isFinite(allBounds[1]) && isFinite(allBounds[2]) && isFinite(allBounds[3])) {
+                emisiMapboxMap.fitBounds(allBounds, { padding: 30, maxZoom: 16, pitch: 45, duration: 1000 });
+                console.log('Map fitted to bounds:', allBounds);
+            } else {
+                console.warn('No valid bounds for buildings or sumurbandung, using fallback');
+                emisiMapboxMap.setCenter([107.615, -6.911]);
+                emisiMapboxMap.setZoom(15);
+                emisiMapboxMap.setPitch(45);
+            }
+            console.log(`Total features rendered: ${totalFeatures}`);
+            document.getElementById('emisi_stats').innerHTML = `
+                <h4 class="text-sm font-semibold text-gray-300">Statistik Emisi Karbon</h4>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div><p class="text-sm"><strong>Total Bangunan:</strong> ${data.stats.total_buildings}</p></div>
+                    <div><p class="text-sm"><strong>Carbon Sink:</strong> ${data.stats.sink_count} (${data.stats.total_buildings ? (data.stats.sink_count/data.stats.total_buildings*100).toFixed(1) : 0}%)</p></div>
+                    <div><p class="text-sm"><strong>Carbon Source:</strong> ${data.stats.source_count} (${data.stats.total_buildings ? (data.stats.source_count/data.stats.total_buildings*100).toFixed(1) : 0}%)</p></div>
+                    <div><p class="text-sm"><strong>Rata-rata Karbon:</strong> ${data.stats.avg_carbon.toFixed(1)} Ton C/year</p></div>
+                </div>
+            `;
+            document.getElementById('total_buildings').innerText = data.stats.total_buildings;
+            document.getElementById('avg_carbon').innerText = data.stats.avg_carbon.toFixed(1);
+            const combined = data.combined || [];
+            const limitSelect = document.createElement('select');
+            limitSelect.className = 'mt-2 block w-full input-field text-sm';
+            limitSelect.innerHTML = `<option value="10">10</option><option value="20">20</option><option value="All">All</option>`;
+            limitSelect.onchange = () => updateEmisiTable(combined, limitSelect.value);
+            document.getElementById('emisi_table').innerHTML = '<h4 class="text-sm font-semibold text-gray-300">Data Bangunan</h4>';
+            document.getElementById('emisi_table').appendChild(limitSelect);
+            updateEmisiTable(combined, limitSelect.value);
+            if (combined.length > 0) {
+                const sampledData = combined.slice(0, Math.min(500, combined.length));
+                Plotly.newPlot('emission_chart', [{
+                    x: sampledData.map(d => d.NetCarbonSink || 0),
+                    type: 'histogram',
+                    nbinsx: 20,
+                    marker: { color: '#FF5A49' }
+                }], {
+                    title: 'Distribusi Nilai Emisi Karbon (Sampel)',
+                    xaxis: { title: 'Net Carbon Emission (Ton C/year)', tickfont: { color: '#f5f5f5' }, titlefont: { color: '#f5f5f5' } },
+                    yaxis: { title: 'Jumlah Bangunan', tickfont: { color: '#f5f5f5' }, titlefont: { color: '#f5f5f5' } },
+                    height: 400,
+                    paper_bgcolor: 'rgba(0,0,0,0)',
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    font: { color: '#f5f5f5' }
+                });
+            } else {
+                document.getElementById('emission_chart').innerHTML = '<p class="text-yellow-400 text-sm">Tidak ada data untuk distribusi emisi.</p>';
+            }
+        }
+
+        function updateEmisiTable(data, limit) {
+            const tableData = limit === 'All' ? data.slice(0, 200) : data.slice(0, parseInt(limit));
+            const table = document.createElement('table');
+            table.className = 'w-full text-left border-collapse';
+            table.innerHTML = `
+                <thead>
+                    <tr class="bg-[#4B2320]/80">
+                        <th class="p-3 text-sm">gml_id</th>
+                        <th class="p-3 text-sm">NetCarbonSink</th>
+                        <th class="p-3 text-sm">Layer</th>
+                        <th class="p-3 text-sm">Status</th>
+                        <th class="p-3 text-sm">Coordinates</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tableData.map(row => `
+                        <tr class="border-b border-gray-700">
+                            <td class="p-3 text-sm">${row.gml_id || row.BuildingId || 'N/A'}</td>
+                            <td class="p-3 text-sm">${row.NetCarbonSink ? row.NetCarbonSink.toFixed(1) : 'N/A'}</td>
+                            <td class="p-3 text-sm">${row.Layer || 'N/A'}</td>
+                            <td class="p-3 text-sm">${row.Status || 'N/A'}</td>
+                            <td class="p-3 text-sm">${row.Coordinates || 'N/A'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            `;
+            document.getElementById('emisi_table').querySelector('table')?.remove();
+            document.getElementById('emisi_table').appendChild(table);
+        }
+
+        async function createPolyhedralSurface() {
+            const gmlKey = document.getElementById('gml_select').value;
+            if (gmlKey !== 'Voxelisasi Bangunan') {
+                alert("Silakan pilih file 'Voxelisasi Bangunan' untuk polyhedral surface.");
+                return;
+            }
+            const buildingIds = Array.from(document.getElementById('building_ids').selectedOptions).map(opt => opt.value);
+            if (!buildingIds.length) {
+                alert('Pilih setidaknya satu bangunan.');
+                return;
+            }
+            const extrudeEnabled = document.getElementById('extrude_enabled').checked;
+            const extrudeDepth = parseFloat(document.getElementById('extrude_depth').value) || 30.0;
+            const loadingDiv = document.getElementById('loading');
+            loadingDiv.style.display = 'block';
+            try {
+                const response = await fetch(`/polyhedral_surface/${encodeURIComponent(gmlKey)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ building_ids: buildingIds, extrude_enabled: extrudeEnabled, extrude_depth: extrudeDepth })
+                });
+                loadingDiv.style.display = 'none';
+                const text = await response.text();
+                console.log('Raw response from /polyhedral_surface:', text);
+                if (!response.ok) throw new Error(`Server error: ${response.status} - ${text}`);
+                let data;
+                try {
+                    data = JSON.parse(text.replace(/NaN/g, 'null'));
+                } catch (e) {
+                    throw new Error(`Invalid JSON response: ${e.message}`);
+                }
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+                await initializeCesium('cesiumContainerPolyhedral');
+                cesiumViewer.entities.removeAll();
+                data.buildings.forEach(building => {
+                    const positions = [];
+                    for (let i = 0; i < building.vertices.length; i += 3) {
+                        positions.push(Cesium.Cartesian3.fromDegrees(building.vertices[i], building.vertices[i+1], building.vertices[i+2]));
+                    }
+                    cesiumViewer.entities.add({
+                        polygon: {
+                            hierarchy: positions,
+                            material: Cesium.Color.fromCssColorString('#FF5A49').withAlpha(0.8),
+                            heightReference: Cesium.HeightReference.NONE
+                        }
+                    });
+                });
+                document.getElementById('download_obj_link').href = `/download_obj/${data.obj_file.replace(/\\/g, '/')}`;
+                alert('Polyhedral surface berhasil dibuat!');
+                cesiumViewer.scene.requestRender();
+            } catch (error) {
+                loadingDiv.style.display = 'none';
+                console.error('Error creating polyhedral surface:', error);
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function loadData(tabName) {
+            const gmlKey = document.getElementById('gml_select').value;
+            if (tabName === 'penilaian_emisi') {
+                if (gmlKey !== 'Data Emisi') {
+                    document.getElementById('penilaian_emisi_table').innerHTML = '<p class="text-gray-300 text-sm">Silakan pilih file "Data Emisi" untuk penilaian emisi.</p>';
+                    return;
+                }
+                try {
+                    const response = await fetch(`/penilaian_emisi/${encodeURIComponent(gmlKey)}`, {
+                        headers: { 'Accept': 'application/json' }
+                    });
+                    const text = await response.text();
+                    console.log('Raw response from /penilaian_emisi:', text);
+                    if (!response.ok) throw new Error(`Failed to fetch emission data: ${response.status} - ${text}`);
+                    let data;
+                    try {
+                        data = JSON.parse(text.replace(/NaN/g, 'null'));
+                    } catch (e) {
+                        throw new Error(`Invalid JSON response: ${e.message}`);
+                    }
+                    if (data.error) {
+                        document.getElementById('penilaian_emisi_table').innerHTML = `<p class="text-red-400 text-sm">Error: ${data.error}</p>`;
+                        return;
+                    }
+                    const table = document.createElement('table');
+                    table.className = 'w-full text-left border-collapse';
+                    table.innerHTML = `
+                        <thead>
+                            <tr class="bg-[#4B2320]/80">
+                                ${data.columns.map(col => `<th class="p-3 text-sm">${col}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.data.map(row => `
+                                <tr class="border-b border-gray-700">
+                                    ${data.columns.map(col => `<td class="p-3 text-sm">${row[col] || ''}</td>`).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    `;
+                    document.getElementById('penilaian_emisi_table').innerHTML = '';
+                    document.getElementById('penilaian_emisi_table').appendChild(table);
+                    document.getElementById('total_buildings').innerText = data.data.length;
+                } catch (error) {
+                    console.error('Error loading penilaian emisi:', error);
+                    document.getElementById('penilaian_emisi_table').innerHTML = `<p class="text-red-400 text-sm">Error: ${error.message}</p>`;
+                }
+            } else if (tabName === 'edit_data') {
+                try {
+                    const response = await fetch(`/edit_data/${encodeURIComponent(gmlKey)}`, {
+                        headers: { 'Accept': 'application/json' }
+                    });
+                    const text = await response.text();
+                    console.log('Raw response from /edit_data (edit_data tab):', text);
+                    if (!response.ok) throw new Error(`Failed to fetch edit data: ${response.status} - ${text}`);
+                    let data;
+                    try {
+                        data = JSON.parse(text.replace(/NaN/g, 'null'));
+                    } catch (e) {
+                        throw new Error(`Invalid JSON response: ${e.message}`);
+                    }
+                    if (data.error) {
+                        document.getElementById('edit_data_table').innerHTML = `<p class="text-red-400 text-sm">Error: ${data.error}</p>`;
+                        return;
+                    }
+                    const table = document.createElement('table');
+                    table.className = 'w-full text-left border-collapse';
+                    table.innerHTML = `
+                        <thead>
+                            <tr class="bg-[#4B2320]/80">${data.columns.map(col => `<th class="p-3 text-sm">${col}</th>`).join('')}</tr>
+                        </thead>
+                        <tbody>
+                            ${data.data.map((row, index) => `
+                                <tr class="border-b border-gray-700">
+                                    ${data.columns.map(col => `
+                                        <td class="p-3 text-sm" contenteditable="true" onblur="updateCell(${index}, '${col}', this.innerText)">${row[col] || ''}</td>
+                                    `).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    `;
+                    document.getElementById('edit_data_table').innerHTML = '';
+                    document.getElementById('edit_data_table').appendChild(table);
+                    const buildingSelect = document.getElementById('building_id_z');
+                    buildingSelect.innerHTML = '<option value="">Pilih Bangunan</option>' + data.building_ids.map(id => `<option value="${id}">${id}</option>`).join('');
+                } catch (error) {
+                    console.error('Error loading edit data:', error);
+                    document.getElementById('edit_data_table').innerHTML = `<p class="text-red-400 text-sm">Error: ${error.message}</p>`;
+                }
+                try {
+                    const response = await fetch('/edit_emisi_data', {
+                        headers: { 'Accept': 'application/json' }
+                    });
+                    const text = await response.text();
+                    console.log('Raw response from /edit_emisi_data:', text);
+                    if (!response.ok) throw new Error(`Failed to fetch edit emisi data: ${response.status} - ${text}`);
+                    let data;
+                    try {
+                        data = JSON.parse(text.replace(/NaN/g, 'null'));
+                    } catch (e) {
+                        throw new Error(`Invalid JSON response: ${e.message}`);
+                    }
+                    if (data.error) {
+                        document.getElementById('edit_emisi_table').innerHTML = `<p class="text-red-400 text-sm">Error: ${data.error}</p>`;
+                        return;
+                    }
+                    const table = document.createElement('table');
+                    table.className = 'w-full text-left border-collapse';
+                    table.innerHTML = `
+                        <thead>
+                            <tr class="bg-[#4B2320]/80">${data.columns.map(col => `<th class="p-3 text-sm">${col}</th>`).join('')}</tr>
+                        </thead>
+                        <tbody>
+                            ${data.data.map((row, index) => `
+                                <tr class="border-b border-gray-700">
+                                    ${data.columns.map(col => `
+                                        <td class="p-3 text-sm" contenteditable="true" onblur="updateEmisiCell(${index}, '${col}', this.innerText)">${row[col] || ''}</td>
+                                    `).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    `;
+                    document.getElementById('edit_emisi_table').innerHTML = '';
+                    document.getElementById('edit_emisi_table').appendChild(table);
+                } catch (error) {
+                    console.error('Error loading edit emisi data:', error);
+                    document.getElementById('edit_emisi_table').innerHTML = `<p class="text-red-400 text-sm">Error: ${error.message}</p>`;
+                }
+            }
+        }
+
+        function updateCell(rowIndex, column, value) {
+            const gmlKey = document.getElementById('gml_select').value;
+            fetch(`/edit_data/${encodeURIComponent(gmlKey)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ edited_data: [{ [column]: value }] })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) alert('Error: ' + data.error);
+                    else alert(data.message);
+                })
+                .catch(error => {
+                    console.error('Error updating cell:', error);
+                    alert('Error: ' + error.message);
+                });
+        }
+
+        function updateEmisiCell(rowIndex, column, value) {
+            fetch('/edit_emisi_data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ edited_data: [{ [column]: value }] })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) alert('Error: ' + data.error);
+                    else alert(data.message);
+                })
+                .catch(error => {
+                    console.error('Error updating emisi cell:', error);
+                    alert('Error: ' + error.message);
+                });
+        }
+
+        function addColumn() {
+            const gmlKey = document.getElementById('gml_select').value;
+            const newColumnName = document.getElementById('new_column_name').value;
+            const newColumnValue = document.getElementById('new_column_value').value;
+            if (!newColumnName) {
+                alert('Masukkan nama kolom yang valid.');
+                return;
+            }
+            fetch(`/edit_data/${encodeURIComponent(gmlKey)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ new_column_name: newColumnName, new_column_value: newColumnValue })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) alert('Error: ' + data.error);
+                    else {
+                        alert(data.message);
+                        loadData('edit_data');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error adding column:', error);
+                    alert('Error: ' + error.message);
+                });
+        }
+
+        function updateZ() {
+            const gmlKey = document.getElementById('gml_select').value;
+            const buildingId = document.getElementById('building_id_z').value;
+            const newZValue = parseFloat(document.getElementById('new_z_value').value);
+            if (!buildingId) {
+                alert('Pilih bangunan terlebih dahulu.');
+                return;
+            }
+            fetch(`/edit_data/${encodeURIComponent(gmlKey)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ building_id_z: buildingId, new_z_value: newZValue })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) alert('Error: ' + data.error);
+                    else {
+                        alert(data.message);
+                        loadData('edit_data');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error updating Z:', error);
+                    alert('Error: ' + error.message);
+                });
+        }
+
+        document.getElementById('sidebar-left-toggle').addEventListener('click', toggleLeftSidebar);
+        document.getElementById('sidebar-left-toggle-closed').addEventListener('click', toggleLeftSidebar);
+        document.getElementById('sidebar-right-toggle').addEventListener('click', toggleRightSidebar);
+        document.getElementById('sidebar-right-toggle-closed').addEventListener('click', toggleRightSidebar);
+        document.getElementById('extrude_enabled').addEventListener('click', function() {
+            document.getElementById('extrude_depth').disabled = !this.checked;
+        });
+
+        window.onload = function() {
+            loadBuildingIds();
+            openTab('map');
+        };
+    </script>
+</body>
+</html>

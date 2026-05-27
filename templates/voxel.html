@@ -1,0 +1,1551 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sumur Bandung 3D Cadastre - Visualisasi Kota</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Montserrat', system-ui, -apple-system, sans-serif; background: linear-gradient(135deg, #2D1A19 0%, #4B2320 100%); color: #f5f5f5; margin: 0; overflow-x: hidden; }
+        .sidebar-left { background: rgba(58, 29, 28, 0.95); backdrop-filter: blur(12px); transition: transform 0.4s ease, opacity 0.4s ease; box-shadow: 2px 0 20px rgba(0, 0, 0, 0.4); opacity: 1; }
+        .sidebar-left-hidden { transform: translateX(-100%); opacity: 0; }
+        .content { transition: margin-left 0.4s ease, width 0.4s ease; box-sizing: border-box; }
+        .map-container { border-radius: 20px; overflow: hidden; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); border: 2px solid rgba(255, 90, 73, 0.4); height: 65vh; width: 100% !important; max-width: 100%; position: relative; margin-bottom: 2rem; transition: height 0.3s ease; }
+        .threejs-container { border-radius: 20px; overflow: hidden; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); border: 2px solid rgba(255, 90, 73, 0.4); height: 40vh; width: 100%; position: relative; margin-bottom: 2rem; }
+        .loading-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); z-index: 1000; justify-content: center; align-items: center; }
+        .loading-spinner { border: 5px solid #f3f3f3; border-top: 5px solid #FF5A49; border-radius: 50%; width: 50px; height: 50px; animation: spin 0.8s linear infinite; }
+        .progress-bar { width: 100%; height: 10px; background: rgba(255, 255, 255, 0.15); border-radius: 5px; overflow: hidden; }
+        .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #FF5A49, #FFD700); transition: width 0.4s ease; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .btn-primary { background: linear-gradient(45deg, #FF5A49, #FFD700); border: none; border-radius: 25px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); transition: all 0.3s ease; }
+        .btn-primary:hover { box-shadow: 0 8px 20px rgba(255, 90, 73, 0.6); transform: scale(1.08); }
+        .input-field { background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 90, 73, 0.4); border-radius: 12px; color: #fff; transition: all 0.3s ease; }
+        .input-field:focus { border-color: #FF5A49; box-shadow: 0 0 12px rgba(255, 90, 73, 0.6); outline: none; }
+        .sidebar-toggle { background: linear-gradient(45deg, #FF5A49, #FFD700); box-shadow: 0 0 12px rgba(255, 90, 73, 0.4); transition: transform 0.3s ease; }
+        .sidebar-left-toggle-hidden { transform: rotate(180deg); }
+        .card { background: rgba(58, 29, 28, 0.95); border-radius: 20px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4); width: 100%; transition: transform 0.3s ease; }
+        .card:hover { transform: translateY(-5px); }
+        .badge { background: #FF5A49; color: #fff; padding: 5px 12px; border-radius: 14px; font-size: 0.8rem; font-weight: 600; }
+        #sidebar-left-toggle-closed { display: none; transition: opacity 0.3s ease; }
+        .sidebar-left-hidden ~ #sidebar-left-toggle-closed { display: block; opacity: 1; }
+        .legend { background: rgba(255, 255, 255, 0.12); padding: 1.2rem; border-radius: 12px; margin-top: 1.2rem; transition: opacity 0.3s ease; }
+        .legend-item { display: flex; align-items: center; margin-bottom: 0.6rem; transition: transform 0.2s ease; }
+        .legend-item:hover { transform: translateX(5px); }
+        .legend-color { width: 24px; height: 24px; margin-right: 0.6rem; border-radius: 6px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); }
+        .info-item { display: flex; justify-content: space-between; margin-bottom: 0.6rem; padding: 0.6rem; background: rgba(255, 90, 73, 0.12); border-radius: 10px; transition: all 0.3s ease; }
+        .info-item:hover { background: rgba(255, 90, 73, 0.35); transform: translateX(8px); }
+        .error-message { background: rgba(255, 0, 0, 0.85); border: 2px solid #FF5A49; border-radius: 10px; padding: 1.2rem; margin-bottom: 1.2rem; color: #fff; font-weight: 600; position: fixed; top: 90px; left: 50%; transform: translateX(-50%); z-index: 1000; max-width: 90%; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3); animation: fadeIn 0.5s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+        .status-panel { background: rgba(58, 29, 28, 0.95); border-radius: 12px; padding: 1.2rem; margin-top: 1.2rem; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3); }
+        .klb-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        .klb-table th, .klb-table td { padding: 0.8rem; text-align: left; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+        .klb-table th { background: rgba(255, 90, 73, 0.2); cursor: pointer; }
+        .klb-table tr:hover { background: rgba(255, 90, 73, 0.15); }
+        .klb-violation { color: #FF5A49; font-weight: bold; }
+        @media (max-width: 768px) {
+            .map-container, .threejs-container { height: 50vh; }
+            .sidebar-left { width: 100%; max-width: 300px; }
+            .content { margin-left: 0 !important; width: 100% !important; }
+            .sidebar-left-hidden ~ #content { margin-left: 0 !important; width: 100% !important; }
+            .klb-table th, .klb-table td { font-size: 0.8rem; padding: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="flex min-h-screen">
+        <header class="fixed top-0 left-0 right-0 bg-gradient-to-r from-[#2D1A19] to-[#4B2320] p-4 flex justify-between items-center z-50 shadow-lg">
+            <div class="flex items-center">
+                <h1 class="text-2xl font-bold text-white">Visualisasi 3D Cadastre - Sumur Bandung</h1>
+            </div>
+            <div class="flex items-center space-x-4">
+                <a href="/" class="btn-primary text-white py-2 px-4 text-sm">Kembali ke Peta</a>
+            </div>
+        </header>
+        <div id="sidebar-left" class="sidebar-left fixed top-16 left-0 h-[calc(100vh-4rem)] w-20 md:w-80 p-4 overflow-y-auto z-40">
+            <button id="sidebar-left-toggle" class="w-full flex justify-center md:justify-end p-2 rounded-full sidebar-toggle mb-4">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                </svg>
+            </button>
+            <div class="md:block hidden">
+                <h3 class="text-xl font-bold text-white mb-6">Konfigurasi Visualisasi</h3>
+                <div class="space-y-4 mt-4">
+                    <div>
+                        <label for="dataSource" class="block text-xs font-medium text-gray-300">Sumber Data:</label>
+                        <select id="dataSource" class="mt-1 block w-full input-field text-sm">
+                            <option value="all" selected>Semua Data</option>
+                            <option value="Sumurbandung">Jalan</option>
+                            <option value="Trees">Pohon</option>
+                            <option value="Buildings">Bangunan</option>
+                            <option value="Voxelisasi Bangunan">Batas Wilayah</option>
+                            <option value="Data Emisi">Emisi Karbon</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="voxelSize" class="block text-xs font-medium text-gray-300">Ukuran Voxel (m):</label>
+                        <input type="number" id="voxelSize" class="mt-1 block w-full input-field text-sm" value="1.0" step="0.1" min="0.1">
+                    </div>
+                    <div>
+                        <label for="kdb" class="block text-xs font-medium text-gray-300">KDB (%):</label>
+                        <input type="number" id="kdb" class="mt-1 block w-full input-field text-sm" value="60" step="1" min="10" max="100">
+                    </div>
+                    <div>
+                        <label for="klb" class="block text-xs font-medium text-gray-300">KLB (Koefisien Lantai Bangunan):</label>
+                        <input type="number" id="klb" class="mt-1 block w-full input-field text-sm" value="2.0" min="0.1" step="0.1">
+                    </div>
+                    <div class="flex items-center">
+                        <input type="checkbox" id="extrudeEnabled" class="rounded border-gray-300 text-[#FF5A49] focus:ring-[#FF5A49]" checked>
+                        <label for="extrudeEnabled" class="ml-2 text-xs font-medium text-gray-300">Aktifkan Ekstrusi Basement</label>
+                    </div>
+                    <div>
+                        <label for="extrudeDepth" class="block text-xs font-medium text-gray-300">Kedalaman Ekstrusi (m):</label>
+                        <input type="number" id="extrudeDepth" class="mt-1 block w-full input-field text-sm" value="30.0" step="1.0" min="0">
+                    </div>
+                    <div>
+                        <label for="newVoxelZ" class="block text-xs font-medium text-gray-300">Tinggi Ekspansi Maksimum (m):</label>
+                        <input type="number" id="newVoxelZ" class="mt-1 block w-full input-field text-sm" value="12.0" step="0.1" min="0">
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" id="toggleEmission" class="rounded border-gray-300 text-[#FF5A49] focus:ring-[#FF5A49]" checked>
+                        <label for="toggleEmission" class="text-xs font-medium text-gray-300">Tampilkan Emisi Karbon</label>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" id="toggleLandParcel" class="rounded border-gray-300 text-[#FF5A49] focus:ring-[#FF5A49]" checked>
+                        <label for="toggleLandParcel" class="text-xs font-medium text-gray-300">Tampilkan Batas Wilayah</label>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" id="toggleRoads" class="rounded border-gray-300 text-[#FF5A49] focus:ring-[#FF5A49]" checked>
+                        <label for="toggleRoads" class="text-xs font-medium text-gray-300">Tampilkan Jalan</label>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" id="toggleTrees" class="rounded border-gray-300 text-[#FF5A49] focus:ring-[#FF5A49]" checked>
+                        <label for="toggleTrees" class="text-xs font-medium text-gray-300">Tampilkan Pohon</label>
+                    </div>
+                    <button class="w-full btn-primary text-white py-2 text-sm" onclick="loadData()">Perbarui Visualisasi</button>
+                    <button class="w-full btn-primary text-white py-2 text-sm" onclick="loadAllData()">Muat Semua Data</button>
+                    <div class="legend">
+                        <h4 class="text-sm font-bold text-white mb-2">Legenda</h4>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #808080;"></div>
+                            <span class="text-xs text-gray-300">Jalan: Permen Kementerian PUPR No. 14/2018</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #008000;"></div>
+                            <span class="text-xs text-gray-300">Pohon: Vegetasi kota untuk estetika dan ekologi</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #1E90FF;"></div>
+                            <span class="text-xs text-gray-300">Bangunan (Permukaan): Bangunan asli</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #FF4500;"></div>
+                            <span class="text-xs text-gray-300">Basement: Potensi ruang bawah tanah</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #FFD700;"></div>
+                            <span class="text-xs text-gray-300">Ekspansi: Potensi penambahan lantai</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #7B68EE;"></div>
+                            <span class="text-xs text-gray-300">Emisi (Net Carbon Sink): Area yang menyerap karbon</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #FF9999;"></div>
+                            <span class="text-xs text-gray-300">Emisi (Net Carbon Source): Area yang menghasilkan polusi</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #FFD700;"></div>
+                            <span class="text-xs text-gray-300">Batas Wilayah: Batas kepemilikan tanah</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <button id="sidebar-left-toggle-closed" class="fixed top-16 left-0 p-2 rounded-r-full sidebar-toggle z-40">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7m0 0l-7 7m7-7H3"></path>
+            </svg>
+        </button>
+        <div id="content" class="content ml-20 md:ml-80 pt-20 p-6 transition-all w-[calc(100%-2.5rem)] md:w-[calc(100%-20rem)]">
+            <div id="voxel" class="card p-6">
+                <h3 class="text-xl font-bold text-white mb-4">Visualisasi 3D Voxel</h3>
+                <p class="text-gray-300 mb-4">Representasi 3D kadaster Sumur Bandung dengan potensi Basement dan Ekspansi sesuai KLB, dilengkapi visualisasi jalan dan batas wilayah.</p>
+                <div class="relative">
+                    <div id="map" class="map-container"></div>
+                    <div id="loading-overlay" class="loading-overlay">
+                        <div class="loading-spinner"></div>
+                    </div>
+                </div>
+                <div id="threejs-container" class="threejs-container hidden"></div>
+                <div id="error-container" class="mt-4"></div>
+                <div id="status-panel" class="status-panel mt-4">
+                    <h4 class="text-sm font-bold text-white mb-2">Status Pemuatan Data</h4>
+                    <div id="status-content"></div>
+                </div>
+                <div id="building-info" class="card mt-4 p-4 hidden">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-lg font-bold text-white">Detail Fitur</h3>
+                        <button class="btn-primary text-white py-1 px-3 text-sm" onclick="toggleBuildingInfo()">Tutup</button>
+                    </div>
+                    <div id="info-content"></div>
+                </div>
+                <div id="klb-table" class="card mt-4 p-4">
+                    <h3 class="text-lg font-bold text-white mb-2">Analisis KLB</h3>
+                    <button class="w-full btn-primary text-white py-2 text-sm mb-4" onclick="unifiedKLBScan()">Pindai KLB</button>
+                    <table class="klb-table">
+                        <thead>
+                            <tr>
+                                <th onclick="sortTable(0)">ID Bangunan</th>
+                                <th onclick="sortTable(1)">Luas Tanah (m²)</th>
+                                <th onclick="sortTable(2)">Luas Lantai Dasar (m²)</th>
+                                <th onclick="sortTable(3)">Total Luas Lantai (m²)</th>
+                                <th onclick="sortTable(4)">KLB</th>
+                                <th onclick="sortTable(5)">Lantai Saat Ini</th>
+                                <th onclick="sortTable(6)">Lantai Maksimum</th>
+                                <th onclick="sortTable(7)">Tinggi Bangunan (m)</th>
+                                <th onclick="sortTable(8)">Rasio KLB</th>
+                                <th onclick="sortTable(9)">Tingkat Pelanggaran</th>
+                                <th onclick="sortTable(10)">Sisa Tinggi (m)</th>
+                                <th onclick="sortTable(11)">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="klb-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        mapboxgl.accessToken = 'APIKEY MAPBOX!';
+        let map, popup, scene, camera, renderer, controls;
+        let allFeatures = new Map();
+        let klbData = [];
+        const centerLon = 107.6155;
+        const centerLat = -6.9105;
+        const FLOOR_HEIGHT = 3.0;
+        const DEFAULT_KDB = 0.6;
+
+        function createVoxels(feature, voxelSize) {
+            const geom = feature.geometry;
+            if (!geom || !geom.coordinates || !['Polygon', 'MultiPolygon'].includes(geom.type)) {
+                console.warn(`Geometri tidak valid untuk voxelisasi: ${geom.type}`, feature);
+                return [];
+            }
+
+            const height = Number(feature.properties.extrusion_height) || 10.0;
+            const baseHeight = Number(feature.properties.base_height) || 0.0;
+            let polygons = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
+
+            let voxels = [];
+            polygons.forEach((polygon, idx) => {
+                const bounds = turf.bbox({ type: 'Polygon', coordinates: polygon });
+                const [minx, miny, maxx, maxy] = bounds;
+
+                if (!isFinite(minx) || !isFinite(miny) || !isFinite(maxx) || !isFinite(maxy)) {
+                    console.warn(`Bounds tidak valid untuk polygon ${idx} pada fitur ${feature.properties.BuildingId || 'N/A'}: [${minx}, ${miny}, ${maxx}, ${maxy}]`);
+                    return;
+                }
+
+                const xRange = Array.from({ length: Math.ceil((maxx - minx) / voxelSize) }, (_, i) => minx + i * voxelSize);
+                const yRange = Array.from({ length: Math.ceil((maxy - miny) / voxelSize) }, (_, i) => miny + i * voxelSize);
+                const zRange = Array.from({ length: Math.ceil(height / voxelSize) }, (_, i) => baseHeight + i * voxelSize);
+
+                const polyFeature = { type: 'Feature', geometry: { type: 'Polygon', coordinates: polygon }, properties: {} };
+                for (let x of xRange) {
+                    for (let y of yRange) {
+                        const point = turf.point([x + voxelSize / 2, y + voxelSize / 2]);
+                        const isInside = turf.booleanPointInPolygon(point, polyFeature, { ignoreBoundary: false });
+                        if (isInside) {
+                            for (let z of zRange) {
+                                voxels.push({
+                                    type: 'Feature',
+                                    geometry: { type: 'Point', coordinates: [x + voxelSize / 2, y + voxelSize / 2, z + voxelSize / 2] },
+                                    properties: {
+                                        height: voxelSize,
+                                        base_height: z,
+                                        voxel_size: voxelSize,
+                                        layer: 'voxel',
+                                        source: feature.properties.source,
+                                        color: feature.properties.color || '#1E90FF',
+                                        opacity: 1.0,
+                                        BuildingId: feature.properties.BuildingId || 'N/A'
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            });
+
+            console.log(`Voxelisasi berhasil untuk fitur ${feature.properties.BuildingId || 'N/A'}: ${voxels.length} voxel`);
+            return voxels;
+        }
+
+        function initializeMap() {
+            map = new mapboxgl.Map({
+                container: 'map',
+                style:'mapbox://styles/mapbox/satellite-v9',
+                center: [centerLon, centerLat],
+                zoom: 15,
+                pitch: 60,
+                bearing: -60,
+                antialias: true,
+                interactive: true
+            });
+
+            map.on('load', async () => {
+                map.addSource('Buildings', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+                map.addSource('Trees', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+                map.addSource('Data Emisi', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+                map.addSource('Voxelisasi Bangunan', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+                map.addSource('Sumurbandung', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+
+                map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+                map.addLayer({
+                    'id': 'disable-default-roads',
+                    'type': 'fill',
+                    'source': 'composite',
+                    'source-layer': 'road',
+                    'paint': { 'fill-opacity': 0 }
+                }, 'road-label');
+
+                map.addLayer({
+                    'id': 'Voxelisasi Bangunan',
+                    'type': 'line',
+                    'source': 'Voxelisasi Bangunan',
+                    'paint': {
+                        'line-color': ['coalesce', ['get', 'color'], '#FFD700'],
+                        'line-width': 10,
+                        'line-opacity': 1.0,
+                        'line-blur': 0.5
+                    },
+                    'filter': ['all', ['==', ['get', 'type'], 'landparcel'], ['==', ['get', 'source'], 'Voxelisasi Bangunan']]
+                });
+                map.addLayer({
+                    'id': 'Data Emisi',
+                    'type': 'fill',
+                    'source': 'Data Emisi',
+                    'paint': {
+                        'fill-color': ['coalesce', ['get', 'color'], '#7B68EE'],
+                        'fill-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0.2, 16, 0.3]
+                    },
+                    'filter': ['all', ['==', ['get', 'type'], 'emission'], ['==', ['get', 'source'], 'Data Emisi']]
+                });
+                map.addLayer({
+                    'id': 'Sumurbandung',
+                    'type': 'line',
+                    'source': 'Sumurbandung',
+                    'paint': {
+                        'line-color': ['coalesce', ['get', 'color'], '#808080'],
+                        'line-width': 2,
+                        'line-opacity': 1.0
+                    },
+                    'filter': ['all', ['==', ['get', 'type'], 'road'], ['==', ['get', 'source'], 'Sumurbandung']]
+                });
+                map.addLayer({
+                    'id': 'Buildings-basement',
+                    'type': 'fill-extrusion',
+                    'source': 'Buildings',
+                    'paint': {
+                        'fill-extrusion-color': '#FF4500',
+                        'fill-extrusion-height': [
+                            '+',
+                            ['get', 'base_height'],
+                            ['get', 'extrusion_height']
+                        ],
+                        'fill-extrusion-base': ['get', 'base_height'],
+                        'fill-extrusion-opacity': 0.8
+                    },
+                    'filter': ['==', ['get', 'layer'], 'basement']
+                });
+                map.addLayer({
+                    'id': 'Buildings-surface',
+                    'type': 'fill-extrusion',
+                    'source': 'Buildings',
+                    'paint': {
+                        'fill-extrusion-color': '#1E90FF',
+                        'fill-extrusion-height': [
+                            '+',
+                            ['get', 'base_height'],
+                            ['get', 'extrusion_height']
+                        ],
+                        'fill-extrusion-base': ['get', 'base_height'],
+                        'fill-extrusion-opacity': 1.0
+                    },
+                    'filter': ['==', ['get', 'layer'], 'surface']
+                });
+                map.addLayer({
+                    'id': 'Buildings-expansion',
+                    'type': 'fill-extrusion',
+                    'source': 'Buildings',
+                    'paint': {
+                        'fill-extrusion-color': '#FFD700',
+                        'fill-extrusion-height': [
+                            '+',
+                            ['get', 'base_height'],
+                            ['get', 'extrusion_height']
+                        ],
+                        'fill-extrusion-base': ['get', 'base_height'],
+                        'fill-extrusion-opacity': 0.9
+                    },
+                    'filter': ['==', ['get', 'layer'], 'expansion']
+                }, 'Buildings-surface');
+
+                map.addLayer({
+                    'id': 'Trees',
+                    'type': 'symbol',
+                    'source': 'Trees',
+                    'layout': {
+                        'icon-image': 'tree-15',
+                        'icon-size': 1.5,
+                        'icon-allow-overlap': true
+                    },
+                    'paint': { 'icon-opacity': 0.8 },
+                    'filter': ['all', ['==', ['geometry-type'], 'Point'], ['==', ['get', 'type'], 'tree'], ['==', ['get', 'source'], 'Trees']]
+                });
+                map.setLight({ anchor: 'viewport', position: [1.5, 120, 40], intensity: 0.6, color: '#ffffff' });
+                map.setConfigProperty('basemap', 'lightPreset', 'day');
+                popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false });
+
+                const rawFeatures = await fetch('path/to/your/buildings.geojson').then(res => res.json()).then(data => data.features);
+                const features = await processBuildingsInBatches(rawFeatures, 0.6, 3.0, true, 10.0, 15.0);
+                map.getSource('Buildings').setData({ type: 'FeatureCollection', features: features });
+
+                map.on('click', ['Buildings-surface', 'Buildings-basement', 'Buildings-expansion', 'Data Emisi', 'Voxelisasi Bangunan', 'Trees', 'Sumurbandung'], (e) => {
+                    const feature = e.features[0];
+                    const props = feature.properties;
+                    const coordinates = e.lngLat;
+                    const description = `
+                        <div class="info-item"><span>ID Fitur:</span><span>${props.BuildingId || props.gml_id || props.NIB || 'N/A'}</span></div>
+                        <div class="info-item"><span>Tipe:</span><span>${props.type || 'N/A'}</span></div>
+                        <div class="info-item"><span>Sumber:</span><span>${props.source || 'N/A'}</span></div>
+                        <div class="info-item"><span>Lapisan:</span><span>${props.layer || 'N/A'}</span></div>
+                        <div class="info-item"><span>Warna:</span><span>${props.color || 'N/A'}</span></div>
+                        ${props.surface_area ? `<div class="info-item"><span>Luas Tanah (m²):</span><span>${Number(props.surface_area).toFixed(2)}</span></div>` : ''}
+                        ${props.base_area ? `<div class="info-item"><span>Luas Lantai Dasar (m²):</span><span>${Number(props.base_area).toFixed(2)}</span></div>` : ''}
+                        ${props.total_floor_area ? `<div class="info-item"><span>Total Luas Lantai (m²):</span><span>${Number(props.total_floor_area).toFixed(2)}</span></div>` : ''}
+                        ${props.extrusion_height ? `<div class="info-item"><span>Tinggi (m):</span><span>${Number(props.extrusion_height).toFixed(2)}</span></div>` : ''}
+                        ${props.base_floors ? `<div class="info-item"><span>Lantai Dasar:</span><span>${props.base_floors}</span></div>` : ''}
+                        ${props.max_floors ? `<div class="info-item"><span>Lantai Maksimum:</span><span>${props.max_floors}</span></div>` : ''}
+                        ${props.basement_depth ? `<div class="info-item"><span>Kedalaman Basement (m):</span><span>${Number(props.basement_depth).toFixed(2)}</span></div>` : ''}
+                        ${props.expansion_height ? `<div class="info-item"><span>Tinggi Ekspansi (m):</span><span>${Number(props.expansion_height).toFixed(2)}</span></div>` : ''}
+                        ${props.NetCarbonSink ? `<div class="info-item"><span>Net Carbon Sink (ton):</span><span>${Number(props.NetCarbonSink).toFixed(2)}</span></div>` : ''}
+                        ${props.klb ? `<div class="info-item"><span>KLB:</span><span>${Number(props.klb).toFixed(2)}</span></div>` : ''}
+                        ${props.klb_violation !== undefined ? `<div class="info-item"><span>Status KLB:</span><span>${props.klb_violation ? 'Melanggar' : 'Aman'}</span></div>` : ''}
+                    `;
+                    document.getElementById('info-content').innerHTML = description;
+                    document.getElementById('building-info').classList.remove('hidden');
+                    popup.setLngLat(coordinates).setHTML(description).addTo(map);
+                    if (props.type === 'building' && props.layer === 'surface') {
+                        renderBuilding3D(feature);
+                    }
+                });
+
+                map.on('mousemove', ['Buildings-surface', 'Buildings-basement', 'Buildings-expansion', 'Data Emisi', 'Voxelisasi Bangunan', 'Trees', 'Sumurbandung'], (e) => {
+                    map.getCanvas().style.cursor = 'pointer';
+                    const feature = e.features[0];
+                    const props = feature.properties;
+                    const coordinates = e.lngLat;
+                    const description = `
+                        <div class="info-item"><span>ID Fitur:</span><span>${props.BuildingId || props.gml_id || props.NIB || 'N/A'}</span></div>
+                        <div class="info-item"><span>Tipe:</span><span>${props.type || 'N/A'}</span></div>
+                        <div class="info-item"><span>KLB:</span><span>${props.klb ? Number(props.klb).toFixed(2) : 'N/A'}</span></div>
+                    `;
+                    popup.setLngLat(coordinates).setHTML(description).addTo(map);
+                });
+
+                map.on('mouseleave', ['Buildings-surface', 'Buildings-basement', 'Buildings-expansion', 'Data Emisi', 'Voxelisasi Bangunan', 'Trees', 'Sumurbandung'], () => {
+                    map.getCanvas().style.cursor = '';
+                    popup.remove();
+                });
+
+                ['toggleEmission', 'toggleLandParcel', 'toggleRoads', 'toggleTrees', 'toggleBuildings'].forEach(id => {
+                    document.getElementById(id).addEventListener('change', (e) => {
+                        if (id === 'toggleBuildings') {
+                            map.setLayoutProperty('Buildings-basement', 'visibility', e.target.checked ? 'visible' : 'none');
+                            map.setLayoutProperty('Buildings-surface', 'visibility', e.target.checked ? 'visible' : 'none');
+                            map.setLayoutProperty('Buildings-expansion', 'visibility', e.target.checked ? 'visible' : 'none');
+                        } else {
+                            const layer = id === 'toggleEmission' ? 'Data Emisi' : id === 'toggleLandParcel' ? 'Voxelisasi Bangunan' : id === 'toggleRoads' ? 'Sumurbandung' : 'Trees';
+                            if (map.getLayer(layer)) {
+                                map.setLayoutProperty(layer, 'visibility', e.target.checked ? 'visible' : 'none');
+                            }
+                        }
+                    });
+                });
+
+                ['dataSource', 'voxelSize', 'kdb', 'klb', 'extrudeEnabled', 'extrudeDepth', 'newVoxelZ'].forEach(id => {
+                    const element = document.getElementById(id);
+                    const eventType = id === 'dataSource' || id === 'extrudeEnabled' ? 'change' : 'input';
+                    element.addEventListener(eventType, () => {
+                        console.log(`Input ${id} diubah: ${element.value || element.checked}`);
+                        loadData();
+                    });
+                });
+
+                loadAllData();
+            });
+
+            map.on('style.load', () => {});
+
+            map.on('resize', () => { map.resize(); });
+
+            map.on('render', () => {
+                if (map.loaded()) {
+                    document.getElementById('loading-overlay').style.display = 'none';
+                    map.getCanvas().classList.remove('map-loading');
+                }
+            });
+        }
+        function parseColor(color) {
+            if (color.startsWith('#')) {
+                const hex = color.replace('#', '');
+                return {
+                    r: parseInt(hex.substr(0, 2), 16),
+                    g: parseInt(hex.substr(2, 2), 16),
+                    b: parseInt(hex.substr(4, 2), 16)
+                };
+            }
+            return { r: 255, g: 215, b: 0 }; // Fallback to gold
+        }
+
+        function triangulatePolygon(coords, z, positions, colors, rgb, indexOffset) {
+            const indices = [];
+            const n = coords.length - 1;
+            for (let i = 1; i < n - 1; i++) {
+                positions.push(coords[0][0], coords[0][1], z);
+                positions.push(coords[i][0], coords[i][1], z);
+                positions.push(coords[i + 1][0], coords[i + 1][1], z);
+                colors.push(rgb.r / 255, rgb.g / 255, rgb.b / 255, 1.0);
+                colors.push(rgb.r / 255, rgb.g / 255, rgb.b / 255, 1.0);
+                colors.push(rgb.r / 255, rgb.g / 255, rgb.b / 255, 1.0);
+                indices.push(indexOffset, indexOffset + 1, indexOffset + 2);
+                indexOffset += 3;
+            }
+            return { indices, indexOffset };
+        }
+
+        function initializeThreeJS() {
+            if (typeof THREE === 'undefined') {
+                showError('Gagal memuat Three.js. Pastikan file /lib/three.min.js dan /lib/OrbitControls.js tersedia.');
+                return;
+            }
+            const container = document.getElementById('threejs-container');
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            const light = new THREE.DirectionalLight(0xffffff, 0.8);
+            light.position.set(0, 50, 50);
+            scene.add(light);
+            scene.add(new THREE.AmbientLight(0x404040));
+
+            camera.position.set(0, 20, 50);
+            controls.update();
+
+            function animate() {
+                requestAnimationFrame(animate);
+                controls.update();
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            window.addEventListener('resize', () => {
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            });
+        }
+
+        function renderBuilding3D(feature) {
+            const container = document.getElementById('threejs-container');
+            container.classList.remove('hidden');
+            scene.clear();
+
+            const props = feature.properties;
+            const geom = feature.geometry;
+            let coords = geom.type === 'Polygon' ? geom.coordinates[0] :
+                        geom.type === 'MultiPolygon' ? geom.coordinates[0][0] : [];
+            const center = turf.centroid(feature).geometry.coordinates;
+            const scale = 0.0001;
+
+            const shape = new THREE.Shape();
+            coords.forEach((coord, idx) => {
+                const x = (coord[0] - center[0]) / scale;
+                const y = (coord[1] - center[1]) / scale;
+                if (idx === 0) shape.moveTo(x, y);
+                else shape.lineTo(x, y);
+            });
+
+            if (props.extrudeEnabled && props.basement_depth > 0) {
+                const extrudeSettings = {
+                    depth: Number(props.basement_depth) || 0,
+                    bevelEnabled: false,
+                    steps: 1,
+                    curveSegments: 1
+                };
+                const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0xFF4500,
+                    transparent: true,
+                    opacity: 0.6,
+                    side: THREE.DoubleSide
+                });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.z = -Number(props.basement_depth) || 0;
+                scene.add(mesh);
+
+                addMeasurementLabel(`Basement: ${Number(props.basement_depth).toFixed(2)}m`, 0, -Number(props.basement_depth) / 2);
+            }
+
+            const extrudeSettings = {
+                depth: Number(props.extrusion_height) || 10.0,
+                bevelEnabled: false,
+                steps: 1,
+                curveSegments: 1
+            };
+            const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            const material = new THREE.MeshStandardMaterial({
+                color: 0x1E90FF,
+                transparent: false,
+                opacity: 1.0,
+                side: THREE.DoubleSide
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.z = Number(props.basement_depth) || 0;
+            scene.add(mesh);
+
+            addMeasurementLabel(`Permukaan: ${Number(props.extrusion_height).toFixed(2)}m`, 0, (Number(props.basement_depth) || 0) + Number(props.extrusion_height) / 2);
+
+            if (props.extrudeEnabled && props.expansion_height > 0) {
+                const extrudeSettingsExp = {
+                    depth: Number(props.expansion_height) || 0,
+                    bevelEnabled: false,
+                    steps: 1,
+                    curveSegments: 1
+                };
+                const geometryExp = new THREE.ExtrudeGeometry(shape, extrudeSettingsExp);
+                const materialExp = new THREE.MeshStandardMaterial({
+                    color: 0xFFD700,
+                    transparent: false,
+                    opacity: 1.0,
+                    side: THREE.DoubleSide
+                });
+                const meshExp = new THREE.Mesh(geometryExp, materialExp);
+                meshExp.position.z = (Number(props.basement_depth) || 0) + Number(props.extrusion_height) + 0.01;
+                scene.add(meshExp);
+
+                addMeasurementLabel(`Ekspansi: ${Number(props.expansion_height).toFixed(2)}m`, 0, (Number(props.basement_depth) || 0) + Number(props.extrusion_height) + Number(props.expansion_height) / 2);
+            }
+
+            camera.position.set(0, 20, 50);
+            controls.target.set(0, 0, 0);
+            controls.update();
+        }
+
+        function addMeasurementLabel(text, x, y) {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            context.font = '20px Montserrat';
+            context.fillStyle = 'white';
+            context.fillText(text, 10, 20);
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.position.set(x, y, 0);
+            sprite.scale.set(10, 5, 1);
+            scene.add(sprite);
+        }
+
+        function validateFeature(feature) {
+            try {
+                const geom = feature.geometry;
+                if (!geom || !geom.coordinates || geom.coordinates.length === 0) {
+                    console.warn(`Fitur tidak valid: Geometri kosong atau tidak ada`, feature);
+                    return false;
+                }
+                let coords;
+                if (geom.type === 'Point') {
+                    coords = [geom.coordinates];
+                } else if (geom.type === 'Polygon') {
+                    coords = geom.coordinates[0];
+                } else if (geom.type === 'MultiPolygon') {
+                    coords = geom.coordinates.flat(2);
+                } else if (geom.type === 'LineString') {
+                    coords = geom.coordinates;
+                } else {
+                    console.warn(`Fitur tidak valid: Tipe geometri ${geom.type} tidak didukung`, feature);
+                    return false;
+                }
+                if (coords.some(c => !Array.isArray(c) || c.length < 2 || !isFinite(c[0]) || !isFinite(c[1]))) {
+                    console.warn('Fitur tidak valid: Koordinat tidak valid', feature);
+                    return false;
+                }
+                const bounds = turf.bbox(feature);
+                const [minx, miny, maxx, maxy] = bounds;
+                const validBounds = minx >= 107.59 && maxx <= 107.64 && miny >= -6.93 && maxy <= -6.89;
+                if (!validBounds) {
+                    console.warn(`Fitur tidak valid: Koordinat di luar Sumur Bandung ([${minx}, ${miny}, ${maxx}, ${maxy}])`, feature);
+                }
+                if (geom.type === 'Polygon') {
+                    const coords = geom.coordinates[0];
+                    if (coords.length < 4 || coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+                        console.warn(`Poligon tidak tertutup untuk fitur ${feature.properties.BuildingId || 'N/A'}`);
+                        return false;
+                    }
+                }
+                return validBounds;
+            } catch (e) {
+                console.warn(`Gagal memvalidasi fitur: ${e.message}`, feature);
+                return false;
+            }
+        }
+
+        function normalizeFeatureProperties(feature, data_source) {
+            const props = feature.properties || {};
+            const klb = Number(document.getElementById('klb').value) || 2.0;
+            const kdb = Number(document.getElementById('kdb').value) / 100 || 0.6;
+            const extrudeEnabled = document.getElementById('extrudeEnabled').checked;
+            const extrudeDepth = Number(document.getElementById('extrudeDepth').value) || 30.0;
+            const maxExpansionHeight = Number(document.getElementById('newVoxelZ').value) || 12.0;
+
+            props.source = data_source;
+            props.type = data_source === 'Voxelisasi Bangunan' ? 'landparcel' :
+                        data_source === 'Data Emisi' ? 'emission' :
+                        data_source === 'Sumurbandung' ? 'road' :
+                        data_source === 'Trees' ? 'tree' : 'building';
+            props.layer = props.layer || (data_source === 'Buildings' ? 'surface' : data_source.toLowerCase());
+            props.surface_area = turf.area(feature) || 0;
+
+            if (!feature.geometry || !feature.geometry.coordinates || feature.geometry.coordinates.length === 0) {
+                console.warn(`Geometri tidak valid untuk fitur ${props.BuildingId || 'N/A'}`);
+                return null;
+            }
+
+            if ((props.type === 'building' || props.type === 'road') && feature.geometry.type === 'Polygon') {
+                const coords = feature.geometry.coordinates[0];
+                if (coords.length < 4 || coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+                    console.warn(`Poligon tidak tertutup untuk fitur ${props.BuildingId || 'N/A'}`);
+                    return null;
+                }
+                if (feature.geometry.coordinates.length > 1) {
+                    console.warn(`Poligon memiliki lubang untuk fitur ${props.BuildingId || 'N/A'}`);
+                    return null;
+                }
+                for (let i = 0; i < coords.length - 1; i++) {
+                    if (coords[i][0] === coords[i + 1][0] && coords[i][1] === coords[i + 1][1]) {
+                        console.warn(`Koordinat duplikat di fitur ${props.BuildingId || 'N/A'}`);
+                        return null;
+                    }
+                }
+            }
+
+            let aspectRatio = 0;
+            let longestSide = 0;
+            if (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon') {
+                const bbox = turf.bbox(feature);
+                const width = bbox[2] - bbox[0];
+                const height = bbox[3] - bbox[1];
+                aspectRatio = width > height ? width / height : height / width;
+
+                let coordinates = feature.geometry.type === 'Polygon' ? feature.geometry.coordinates[0] : feature.geometry.coordinates[0][0];
+                for (let i = 0; i < coordinates.length - 1; i++) {
+                    const start = coordinates[i];
+                    const end = coordinates[i + 1];
+                    const line = turf.lineString([start, end]);
+                    const length = turf.length(line, { units: 'meters' });
+                    longestSide = Math.max(longestSide, length);
+                }
+            }
+
+            if (data_source === 'Buildings') {
+                const isRoad = props.highway ||
+                            props.name?.toLowerCase().includes('jalan') ||
+                            longestSide > 50 ||
+                            aspectRatio > 5;
+                if (isRoad) {
+                    console.log(`Fitur ${props.BuildingId || 'N/A'} dipindahkan ke Sumurbandung: Kemungkinan jalan (highway=${props.highway}, name=${props.name}, longestSide=${longestSide.toFixed(2)} m, aspectRatio=${aspectRatio.toFixed(2)})`);
+                    props.source = 'Sumurbandung';
+                    props.type = 'road';
+                    props.layer = 'road';
+                }
+            }
+
+            if (props.source === 'Sumurbandung') {
+                props.type = 'road';
+                props.layer = 'road';
+                props.color = '#808080';
+                props.extrusion_height = 0.5;
+                props.base_height = 0.0;
+                props.opacity = 1.0;
+                props.current_floors = 0;
+                props.max_floors = 0;
+                props.basement_depth = 0.0;
+                props.expansion_height = 0.0;
+                console.log(`Jalan: id=${props.BuildingId || 'N/A'}, area=${props.surface_area.toFixed(2)} m², longestSide=${longestSide.toFixed(2)} m, aspectRatio=${aspectRatio.toFixed(2)}`);
+            } else if (props.source === 'Trees') {
+                if (feature.geometry.type !== 'Point') {
+                    console.warn(`Fitur pohon ${props.BuildingId || 'N/A'} tidak valid: Geometri bukan Point`);
+                    return null;
+                }
+                props.type = 'tree';
+                props.layer = 'tree';
+                props.color = '#008000';
+                props.extrusion_height = 5.0;
+                props.base_height = 0.0;
+                props.radius = Number(props.crownDiameter) || 5.0;
+                props.opacity = 0.8;
+                props.current_floors = 0;
+                props.max_floors = 0;
+                props.basement_depth = 0.0;
+                props.expansion_height = 0.0;
+            } else if (props.source === 'Buildings') {
+                props.type = 'building';
+                props.layer = props.layer || 'surface';
+                props.BuildingId = props.BuildingId || `B${Math.random().toString(36).substr(2, 9)}`;
+                const basementHeight = extrudeEnabled ? Math.min(props.surface_area * 0.01 * klb, extrudeDepth) : 0.0;
+                props.extrusion_height = Number(props.extrusion_height) || (props.layer === 'surface' ? 15.0 : props.layer === 'basement' ? basementHeight : Math.max(maxExpansionHeight, 0.1));
+                props.base_height = Number(props.base_height) || (props.layer === 'basement' ? 0.0 : props.layer === 'surface' ? basementHeight : basementHeight + 15.0);
+                props.base_area = props.surface_area * kdb;
+                props.base_area = Math.max(props.base_area, 10);
+                props.current_floors = Math.ceil(props.extrusion_height / FLOOR_HEIGHT) || 1;
+                props.total_floor_area = props.surface_area * klb;
+                props.max_floors = Math.floor(props.total_floor_area / props.base_area) || 1;
+                props.expansion_height = props.layer === 'expansion' ? Math.max(Math.min((props.max_floors - props.current_floors) * FLOOR_HEIGHT, maxExpansionHeight), 0.1) : 0.0;
+                props.color = props.layer === 'surface' ? '#1E90FF' :
+                            props.layer === 'basement' ? '#FF4500' :
+                            props.layer === 'expansion' ? '#FFD700' : '#1E90FF';
+                props.basement_depth = props.layer === 'basement' ? basementHeight : 0.0;
+                props.opacity = props.layer === 'surface' ? 1.0 : props.layer === 'basement' ? 0.6 : 1.0;
+                props.klb = klb;
+                props.klb_violation = props.current_floors > props.max_floors;
+                props.extrudeEnabled = extrudeEnabled;
+                console.log(`Bangunan: id=${props.BuildingId}, layer=${props.layer}, color=${props.color}, base_height=${props.base_height.toFixed(2)}, extrusion_height=${props.extrusion_height.toFixed(2)}`);
+            } else if (props.source === 'Voxelisasi Bangunan') {
+                props.type = 'landparcel';
+                props.layer = 'landparcel';
+                props.color = '#FFD700';
+                props.extrusion_height = 0.1;
+                props.base_height = 0.0;
+                props.opacity = 1.0;
+                props.current_floors = 0;
+                props.max_floors = 0;
+                props.basement_depth = 0.0;
+                props.expansion_height = 0.0;
+            } else if (props.source === 'Data Emisi') {
+                if (props.surface_area > 1000) {
+                    console.warn(`Fitur emisi diabaikan: area=${props.surface_area.toFixed(2)} m² terlalu besar`);
+                    return null;
+                }
+                props.type = 'emission';
+                props.layer = 'emission';
+                const netCarbonSink = Number(props.NetCarbonSink) || 0;
+                props.color = netCarbonSink < 0 ? '#7B68EE' : netCarbonSink > 0 ? '#FF9999' : '#808080';
+                props.extrusion_height = Math.min(Math.abs(netCarbonSink) * 0.5, 1.0);
+                props.base_height = 0.0;
+                props.opacity = 0.3;
+                props.current_floors = 0;
+                props.max_floors = 0;
+                props.basement_depth = 0.0;
+                props.expansion_height = 0.0;
+                props.NetCarbonSink = netCarbonSink;
+                console.log(`Fitur emisi: id=${props.BuildingId || 'N/A'}, area=${props.surface_area.toFixed(2)} m², NetCarbonSink=${netCarbonSink}, color=${props.color}`);
+            }
+
+            props.voxelSize = Number(document.getElementById('voxelSize').value) || 1.0;
+            props.extrudeDepth = extrudeDepth;
+
+            console.log(`Normalisasi fitur: source=${props.source}, type=${props.type}, layer=${props.layer}, color=${props.color}, opacity=${props.opacity}, base_height=${props.base_height.toFixed(2)}, extrusion_height=${props.extrusion_height.toFixed(2)}`);
+            feature.properties = props;
+            return feature;
+        }
+
+        function getFeatureBounds(features) {
+            const defaultBounds = [[107.59, -6.93], [107.64, -6.89]];
+            let bounds = null;
+            let validFeatureCount = 0;
+
+            features.forEach(feature => {
+                try {
+                    const featureBounds = turf.bbox(feature);
+                    const [minX, minY, maxX, maxY] = featureBounds;
+                    if (isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY) &&
+                        minX !== maxX && minY !== maxY &&
+                        minX >= 107.59 && maxX <= 107.64 && minY >= -6.93 && maxY <= -6.89) {
+                        if (!bounds) {
+                            bounds = featureBounds;
+                        } else {
+                            bounds[0] = Math.min(bounds[0], minX);
+                            bounds[1] = Math.min(bounds[1], minY);
+                            bounds[2] = Math.max(bounds[2], maxX);
+                            bounds[3] = Math.max(bounds[3], maxY);
+                        }
+                        validFeatureCount++;
+                    }
+                } catch (e) {
+                    console.warn(`Gagal menghitung bounds untuk fitur: ${e.message}`, feature);
+                }
+            });
+
+            return validFeatureCount > 0 ? [[bounds[0], bounds[1]], [bounds[2], bounds[3]]] : defaultBounds;
+        }
+
+        function addCustomFeatures(features) {
+            const buildingFeatures = features.filter(f => f.properties.source === 'Buildings');
+            const treeFeatures = features.filter(f => f.properties.source === 'Trees');
+            const emissionFeatures = features.filter(f => f.properties.source === 'Data Emisi');
+            const landparcelFeatures = features.filter(f => f.properties.source === 'Voxelisasi Bangunan');
+            const roadFeatures = features.filter(f => f.properties.source === 'Sumurbandung');
+
+            console.log('Menambahkan fitur:', {
+                buildings: buildingFeatures.length,
+                trees: treeFeatures.length,
+                emissions: emissionFeatures.length,
+                landparcels: landparcelFeatures.length,
+                roads: roadFeatures.length
+            });
+
+            if (map.getSource('Buildings')) {
+                map.getSource('Buildings').setData({ type: 'FeatureCollection', features: buildingFeatures });
+            } else {
+                console.warn('Sumber Buildings tidak ditemukan');
+            }
+            if (map.getSource('Trees')) {
+                map.getSource('Trees').setData({ type: 'FeatureCollection', features: treeFeatures });
+            } else {
+                console.warn('Sumber Trees tidak ditemukan');
+            }
+            if (map.getSource('Data Emisi')) {
+                map.getSource('Data Emisi').setData({ type: 'FeatureCollection', features: emissionFeatures });
+            } else {
+                console.warn('Sumber Data Emisi tidak ditemukan');
+            }
+            if (map.getSource('Voxelisasi Bangunan')) {
+                map.getSource('Voxelisasi Bangunan').setData({ type: 'FeatureCollection', features: landparcelFeatures });
+            } else {
+                console.warn('Sumber Voxelisasi Bangunan tidak ditemukan');
+            }
+            if (map.getSource('Sumurbandung')) {
+                map.getSource('Sumurbandung').setData({ type: 'FeatureCollection', features: roadFeatures });
+            } else {
+                console.warn('Sumber Sumurbandung tidak ditemukan');
+            }
+
+            const layers = ['Sumurbandung', 'Buildings-surface', 'Buildings-basement', 'Buildings-expansion', 'Voxelisasi Bangunan', 'Data Emisi', 'Trees'];
+            layers.forEach(layer => {
+                if (map.getLayer(layer)) {
+                    map.setLayoutProperty(layer, 'visibility', document.getElementById(`toggle${layer.replace(/^[^-]*-/, '').replace('Voxelisasi Bangunan', 'LandParcel').replace('Data Emisi', 'Emission').replace('Sumurbandung', 'Roads')}`).checked ? 'visible' : 'none');
+                } else {
+                    console.warn(`Layer ${layer} tidak ditemukan`);
+                }
+            });
+
+            map.triggerRepaint();
+        }
+
+        function updateKLBTable(features) {
+            klbData = features.filter(f => f.properties.type === 'building' && f.properties.layer === 'surface').map(f => ({
+                BuildingId: f.properties.BuildingId || f.properties.gml_id || f.properties.NIB || 'N/A',
+                surface_area: Number(f.properties.surface_area) || 0,
+                base_area: Number(f.properties.base_area) || 0,
+                total_floor_area: Number(f.properties.total_floor_area) || 0,
+                klb: Number(f.properties.klb) || 0,
+                current_floors: Number(f.properties.current_floors) || 0,
+                max_floors: Number(f.properties.max_floors) || 0,
+                klb_violation: f.properties.klb_violation || false
+            }));
+
+            const tbody = document.getElementById('klb-table-body');
+            tbody.innerHTML = '';
+            klbData.forEach(item => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${item.BuildingId}</td>
+                        <td>${item.surface_area.toFixed(2)}</td>
+                        <td>${item.base_area.toFixed(2)}</td>
+                        <td>${item.total_floor_area.toFixed(2)}</td>
+                        <td>${item.klb.toFixed(2)}</td>
+                        <td>${item.current_floors}</td>
+                        <td>${item.max_floors}</td>
+                        <td class="${item.klb_violation ? 'klb-violation' : ''}">${item.klb_violation ? 'Melanggar' : 'Aman'}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        async function unifiedKLBScan() {
+            // --- Pengambilan Input dari UI ---
+            const voxelSize = Number(document.getElementById('voxelSize').value) || 1.0;
+            const kdb = Number(document.getElementById('kdb').value) / 100 || 0.6;
+            const klb = Number(document.getElementById('klb').value) || 2.0;
+            const extrudeEnabled = document.getElementById('extrudeEnabled').checked;
+            const extrudeDepth = Number(document.getElementById('extrudeDepth').value) || 30.0;
+            const maxExpansionHeight = Number(document.getElementById('newVoxelZ').value) || 12.0;
+
+            // --- Konstanta ---
+            const FLOOR_HEIGHT = 4.0;
+            const MAX_HEIGHT_ZONE = 30.0;
+            const BATCH_SIZE = 100; // Menggunakan huruf kapital untuk konstanta
+
+            // --- Inisialisasi Status ---
+            updateStatus('Pemindaian KLB Terpadu', 'loading', 0, 0, 'Mempersiapkan data...', 10);
+            let klbData = [];
+            const buildingMap = new Map();
+            let violationCount = 0;
+            const violatingBuildingIds = []; // Array untuk menampung ID bangunan yang melanggar
+
+            try {
+                // --- Filter Data Bangunan ---
+                // PASTIKAN KONDISI FILTER INI SESUAI DENGAN STRUKTUR DATA ANDA
+                const surfaceFeatures = Array.from(allFeatures.values()).filter(
+                    f => f.properties.type === 'building' && f.properties.layer === 'surface'
+                );
+
+                console.log(`Memindai ${surfaceFeatures.length} fitur surface.`);
+
+                if (surfaceFeatures.length === 0) {
+                    console.warn('Tidak ada fitur "surface" ditemukan di allFeatures. Periksa sumber data di loadData atau /get_emission_data.');
+                    updateStatus('Pemindaian KLB Terpadu', 'error', 0, 0, 'Tidak ada data bangunan untuk dipindai.', 100);
+                    showError('Tidak ada data bangunan untuk dipindai. Pastikan data layer "surface" sudah dimuat dengan benar.');
+                    return;
+                }
+
+                // --- Proses Data secara Batch ---
+                for (let i = 0; i < surfaceFeatures.length; i += BATCH_SIZE) {
+                    const batch = surfaceFeatures.slice(i, i + BATCH_SIZE);
+                    const progress = Math.round(((i + batch.length) / surfaceFeatures.length) * 90);
+
+                    // Menjalankan proses kalkulasi secara paralel untuk setiap batch
+                    await Promise.all(batch.map(async feature => {
+                        const props = feature.properties;
+                        const buildingId = props.building_id || props.BuildingId || props.gml_id || props.NIB || `unknown-${i}`;
+                        
+                        // Pastikan luas area valid
+                        let surfaceArea = Number(props.surface_area) || (typeof turf !== 'undefined' ? turf.area(feature) : 1);
+                        if (surfaceArea <= 1) {
+                            console.warn(`Luas permukaan tidak valid atau sangat kecil untuk ${buildingId}: ${surfaceArea}, dilewati.`);
+                            return; // Lewati fitur ini jika area tidak valid
+                        }
+
+                        // --- Kalkulasi Metrik KLB ---
+                        const surfaceHeight = Number(props.extrusion_height) || 15.0;
+                        const currentFloors = Math.ceil(surfaceHeight / FLOOR_HEIGHT) || 1;
+                        const maxBaseArea = surfaceArea * kdb;
+                        const totalFloorArea = surfaceArea * klb;
+                        const maxFloors = Math.floor(totalFloorArea / maxBaseArea) || 1;
+                        const maxHeightAllowed = Math.min(maxFloors * FLOOR_HEIGHT, MAX_HEIGHT_ZONE);
+                        const basementHeight = extrudeEnabled ? Math.min(surfaceArea / 200, extrudeDepth) : 0;
+                        const remainingHeight = maxHeightAllowed - (basementHeight + surfaceHeight);
+                        const klbViolation = currentFloors > maxFloors;
+                        const klbRatio = maxFloors > 0 ? currentFloors / maxFloors : Infinity;
+                        const violationSeverity = klbViolation ? (currentFloors - maxFloors) : 0;
+
+                        if (klbViolation) {
+                            violationCount++;
+                            violatingBuildingIds.push(buildingId); // Kumpulkan ID yang melanggar
+                        }
+
+                        // Simpan hasil kalkulasi
+                        buildingMap.set(buildingId, {
+                            BuildingId: buildingId,
+                            surface_area: surfaceArea,
+                            base_area: maxBaseArea,
+                            total_floor_area: totalFloorArea,
+                            klb: klb,
+                            current_floors: currentFloors,
+                            max_floors: maxFloors,
+                            klb_violation: klbViolation,
+                            extrusion_height: surfaceHeight,
+                            klb_ratio: klbRatio,
+                            violation_severity: violationSeverity,
+                            remaining_height: remainingHeight
+                        });
+                    }));
+
+                    updateStatus('Pemindaian KLB Terpadu', 'loading', buildingMap.size, violationCount, `Memindai ${buildingMap.size}/${surfaceFeatures.length} bangunan...`, progress);
+                }
+
+                // --- OPTIMASI: Update style peta SATU KALI setelah loop selesai ---
+                map.setPaintProperty('Buildings-surface', 'fill-extrusion-color', [
+                    'case',
+                    ['in', ['get', 'building_id'], ['literal', violatingBuildingIds]],
+                    '#FF0000', // Merah untuk pelanggaran
+                    '#1E90FF'  // Biru untuk normal
+                ]);
+
+                // --- Urutkan Data dan Tampilkan Hasil ---
+                klbData = Array.from(buildingMap.values());
+                klbData.sort((a, b) => b.klb_violation - a.klb_violation || b.violation_severity - a.violation_severity || a.BuildingId.localeCompare(b.BuildingId));
+
+                const totalBuildings = klbData.length;
+                const violationPercentage = totalBuildings > 0 ? (violationCount / totalBuildings * 100).toFixed(2) : 0;
+                const summary = `Total Bangunan: ${totalBuildings} | Pelanggaran KLB: ${violationCount} (${violationPercentage}%)`;
+
+                const summaryElement = document.getElementById('klb-summary') || document.createElement('p');
+                summaryElement.id = 'klb-summary';
+                summaryElement.className = 'text-white text-sm mb-2';
+                summaryElement.innerText = summary;
+                const klbTableDiv = document.getElementById('klb-table');
+                if (!document.getElementById('klb-summary')) {
+                    klbTableDiv.insertBefore(summaryElement, klbTableDiv.querySelector('table'));
+                }
+
+                // --- OPTIMASI: Render tabel dengan lebih efisien ---
+                const tbody = document.getElementById('klb-table-body');
+                let tableRowsHTML = ''; // Buat string HTML
+                klbData.forEach(item => {
+                    // Tambahkan setiap baris ke string
+                    tableRowsHTML += `
+                        <tr class="${item.klb_violation ? 'klb-violation-row' : ''}">
+                            <td>${item.BuildingId}</td>
+                            <td>${item.surface_area.toFixed(2)}</td>
+                            <td>${item.base_area.toFixed(2)}</td>
+                            <td>${item.total_floor_area.toFixed(2)}</td>
+                            <td>${item.klb.toFixed(2)}</td>
+                            <td>${item.current_floors}</td>
+                            <td>${item.max_floors}</td>
+                            <td>${item.extrusion_height.toFixed(2)}</td>
+                            <td>${item.klb_ratio.toFixed(2)}</td>
+                            <td>${item.violation_severity}</td>
+                            <td>${item.remaining_height.toFixed(2)}</td>
+                            <td class="${item.klb_violation ? 'klb-violation' : ''}">${item.klb_violation ? 'Melanggar' : 'Aman'}</td>
+                        </tr>
+                    `;
+                });
+                tbody.innerHTML = tableRowsHTML; // Set innerHTML SATU KALI
+
+                console.log(`Pemindaian KLB selesai: ${klbData.length} bangunan, ${violationCount} pelanggaran (${violationPercentage}%)`);
+                updateStatus('Pemindaian KLB Terpadu', 'success', klbData.length, violationCount, `Berhasil memindai ${klbData.length} bangunan`, 100);
+
+            } catch (error) {
+                console.error('Error saat pemindaian KLB:', error);
+                showError(`Gagal memindai KLB: ${error.message}`);
+                updateStatus('Pemindaian KLB Terpadu', 'error', 0, 0, `Gagal: ${error.message}`);
+            }
+        }
+        function sortTable(column) {
+            const headers = ['BuildingId', 'surface_area', 'base_area', 'total_floor_area', 'klb', 'current_floors', 'max_floors', 'klb_violation'];
+            klbData.sort((a, b) => {
+                const valA = a[headers[column]];
+                const valB = b[headers[column]];
+                return typeof valA === 'string' ? valA.localeCompare(valB) : valA - valB;
+            });
+            updateKLBTable(klbData);
+        }
+
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.innerHTML = `<div class="error-message">${message}</div>`;
+            setTimeout(() => errorContainer.innerHTML = '', 15000);
+        }
+
+        function updateStatus(dataSource, status, count = 0, invalidCount = 0, details = '', progress = 0) {
+            const statusContent = document.getElementById('status-content');
+            const statusClass = status === 'loading' ? 'text-yellow-400' : status === 'success' ? 'text-green-400' : 'text-red-400';
+            const existing = statusContent.querySelector(`[data-source="${dataSource}"]`);
+            if (existing) existing.remove();
+            statusContent.insertAdjacentHTML('beforeend', `
+                <div class="info-item ${statusClass}" data-source="${dataSource}">
+                    <span>${dataSource}:</span>
+                    <span>${status === 'loading' ? `Memuat... (${progress}%)` : status === 'success' ? `Berhasil memuat ${count} fitur (${invalidCount} tidak valid) - ${details}` : `Gagal: ${details}`}</span>
+                    ${status === 'loading' ? `<div class="progress-bar"><div class="progress-bar-fill" style="width: ${progress}%"></div></div>` : ''}
+                </div>
+            `);
+        }
+
+        async function loadData(dataSourceToLoad = null) {
+            const voxelSize = Number(document.getElementById('voxelSize').value) || 1.0;
+            const extrudeEnabled = document.getElementById('extrudeEnabled').checked;
+            const extrudeDepth = Number(document.getElementById('extrudeDepth').value) || 30.0;
+            const maxExpansionHeight = Number(document.getElementById('newVoxelZ').value) || 12.0;
+            const kdb = Number(document.getElementById('kdb').value) / 100 || DEFAULT_KDB;
+            const klb = Number(document.getElementById('klb').value) || 2.0;
+            const container = document.getElementById('map');
+            const loadingOverlay = document.getElementById('loading-overlay');
+
+            container.classList.add('map-loading');
+            loadingOverlay.style.display = 'flex';
+            document.getElementById('error-container').innerHTML = '';
+
+            const sources = dataSourceToLoad && dataSourceToLoad !== 'all' ? [dataSourceToLoad] : ['Sumurbandung', 'Trees', 'Buildings', 'Voxelisasi Bangunan', 'Data Emisi'];
+
+            if (dataSourceToLoad === 'all') {
+                allFeatures.clear();
+                klbData = [];
+                sources.forEach(sourceName => {
+                    if (map.getSource(sourceName)) {
+                        map.getSource(sourceName).setData({ type: 'FeatureCollection', features: [] });
+                    }
+                });
+            }
+
+            const sourceMap = {
+                'Sumurbandung': 'sumurbandung',
+                'Trees': 'trees',
+                'Buildings': 'buildings',
+                'Voxelisasi Bangunan': 'lanpar',
+                'Data Emisi': 'emisi'
+            };
+
+            const fallbackData = {
+                'Sumurbandung': {
+                    type: 'FeatureCollection',
+                    features: [{
+                        type: 'Feature',
+                        geometry: { type: 'Polygon', coordinates: [[[107.615, -6.910], [107.616, -6.910], [107.616, -6.909], [107.615, -6.909], [107.615, -6.910]]] },
+                        properties: { type: 'road', source: 'Sumurbandung', layer: 'road', color: '#808080', extrusion_height: 0.5, base_height: 0.0, opacity: 1.0 }
+                    }]
+                },
+                'Buildings': {
+                    type: 'FeatureCollection',
+                    features: [{
+                        type: 'Feature',
+                        geometry: { type: 'Polygon', coordinates: [[[107.6152, -6.9102], [107.6153, -6.9102], [107.6153, -6.9101], [107.6152, -6.9101], [107.6152, -6.9102]]] },
+                        properties: { BuildingId: 'B001', type: 'building', source: 'Buildings', layer: 'surface', color: '#1E90FF', extrusion_height: 15.0, base_height: 0.0, opacity: 1.0 }
+                    }]
+                },
+                'Trees': {
+                    type: 'FeatureCollection',
+                    features: [{
+                        type: 'Feature',
+                        geometry: { type: 'Point', coordinates: [107.6155, -6.9105] },
+                        properties: { type: 'tree', source: 'Trees', layer: 'tree', color: '#008000', radius: 5.0, opacity: 0.8 }
+                    }]
+                },
+                'Voxelisasi Bangunan': {
+                    type: 'FeatureCollection',
+                    features: [{
+                        type: 'Feature',
+                        geometry: { type: 'Polygon', coordinates: [[[107.6151, -6.9103], [107.6154, -6.9103], [107.6154, -6.9100], [107.6151, -6.9100], [107.6151, -6.9103]]] },
+                        properties: { type: 'landparcel', source: 'Voxelisasi Bangunan', layer: 'landparcel', color: '#FFD700', extrusion_height: 0.1, base_height: 0.0, opacity: 1.0 }
+                    }]
+                },
+                'Data Emisi': {
+                    type: 'FeatureCollection',
+                    features: [{
+                        type: 'Feature',
+                        geometry: { type: 'Polygon', coordinates: [[[107.6153, -6.9104], [107.6155, -6.9104], [107.6155, -6.9102], [107.6153, -6.9102], [107.6153, -6.9104]]] },
+                        properties: { type: 'emission', source: 'Data Emisi', layer: 'emission', color: '#7B68EE', extrusion_height: 2.0, base_height: 0.0, opacity: 0.3, NetCarbonSink: -0.5 }
+                    }]
+                }
+            };
+
+            let totalFeatures = 0, totalInvalid = 0;
+            let featuresForMap = [];
+
+            try {
+                updateStatus('Semua Data', 'loading', 0, 0, 'Mengambil data dari /get_emission_data...', 10);
+                let data;
+                try {
+                    const response = await fetchWithRetry('/get_emission_data');
+                    updateStatus('Semua Data', 'loading', 0, 0, 'Memproses data...', 30);
+                    data = await response.json();
+                } catch (error) {
+                    console.warn(`Gagal mengambil data dari server: ${error.message}. Menggunakan data fallback.`);
+                    data = fallbackData;
+                }
+
+                for (const source of sources) {
+                    const key = sourceMap[source];
+                    updateStatus(source, 'loading', 0, 0, `Memproses ${source}...`, 40);
+                    let geojsonData = data[key] ? (typeof data[key] === 'string' ? JSON.parse(data[key]) : data[key]) : fallbackData[source];
+
+                    if (!geojsonData || !geojsonData.features || geojsonData.features.length === 0) {
+                        geojsonData = fallbackData[source];
+                        updateStatus(source, 'success', geojsonData.features.length, 0, 'Menggunakan data fallback', 60);
+                    }
+
+                    let validFeatures = geojsonData.features.filter(f => validateFeature(f)).map(feature => normalizeFeatureProperties(feature, source)).filter(f => f !== null);
+
+                    if (source === 'Buildings') {
+                        validFeatures = await processBuildingsInBatches(validFeatures, voxelSize, extrudeEnabled, extrudeDepth);
+                    }
+
+                    validFeatures.forEach(f => {
+                        const id = f.properties.BuildingId || f.properties.gml_id || f.properties.NIB || `feature-${Math.random()}`;
+                        allFeatures.set(id, f);
+                    });
+
+                    featuresForMap = [...featuresForMap, ...validFeatures];
+
+                    let roadCount = 0, surfaceCount = 0, basementCount = 0, expansionCount = 0, voxelCount = 0, treeCount = 0, emissionCount = 0, landparcelCount = 0;
+                    validFeatures.forEach(feature => {
+                        const props = feature.properties;
+                        if (props.type === 'road') roadCount++;
+                        else if (props.type === 'tree') treeCount++;
+                        else if (props.type === 'building' && props.layer === 'surface') surfaceCount++;
+                        else if (props.type === 'building' && props.layer === 'basement') basementCount++;
+                        else if (props.type === 'building' && props.layer === 'expansion') expansionCount++;
+                        else if (props.type === 'building' && props.layer === 'voxel') voxelCount++;
+                        else if (props.type === 'emission') emissionCount++;
+                        else if (props.type === 'landparcel') landparcelCount++;
+                    });
+
+                    totalFeatures += validFeatures.length;
+                    totalInvalid += geojsonData.features.length - validFeatures.length;
+
+                    updateStatus(source, 'success', validFeatures.length, geojsonData.features.length - validFeatures.length,
+                        `Menambahkan ${roadCount} jalan, ${surfaceCount} bangunan permukaan, ${basementCount} basement, ${expansionCount} ekspansi, ${voxelCount} voxel, ${treeCount} pohon, ${emissionCount} emisi, ${landparcelCount} batas wilayah`, 100);
+                }
+
+                addCustomFeatures(featuresForMap);
+                updateKLBTable(featuresForMap);
+
+                document.getElementById('info-content').innerHTML = featuresForMap.length > 0 ?
+                    `Memuat ${totalFeatures} fitur (${totalInvalid} tidak valid) dari ${dataSourceToLoad || 'semua sumber'}.` :
+                    'Tidak ada data untuk ditampilkan. Silakan periksa log server atau file GeoJSON.';
+            } catch (error) {
+                const errorMsg = error.message.includes('HTTP 404') ? 'Endpoint /get_emission_data tidak ditemukan. Pastikan server Flask berjalan.' :
+                    error.message.includes('Invalid content type') ? 'Respons dari /get_emission_data bukan JSON yang valid.' :
+                    `Gagal memuat data: ${error.message}`;
+                showError(errorMsg);
+                updateStatus('Semua Data', 'error', 0, 0, errorMsg);
+            } finally {
+                loadingOverlay.style.display = 'none';
+                container.classList.remove('map-loading');
+            }
+
+            if (featuresForMap.length > 0) {
+                const bounds = getFeatureBounds(featuresForMap);
+                map.fitBounds(bounds, { padding: 50, duration: 1000 });
+                map.setPitch(60);
+                map.setBearing(-60);
+            }
+        }
+
+        async function fetchWithRetry(url, retries = 5, delay = 2000) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, { cache: 'no-cache' });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    const contentType = response.headers.get('content-type');
+                    if (!contentType || !contentType.includes('application/json')) {
+                        throw new Error(`Invalid content type: ${contentType}`);
+                    }
+                    return response;
+                } catch (error) {
+                    if (i < retries - 1 && (error.message.includes('Failed to fetch') || error.message.includes('HTTP 404'))) {
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+                    throw error;
+                }
+            }
+        }
+
+        async function processBuildingsInBatches(rawFeatures, kdb, klb, extrudeEnabled, extrudeDepth, maxExpansionHeightParam) {
+            const buildingFeatures = [];
+            const batchSize = 100;
+
+            const FLOOR_HEIGHT = 4.0;
+            const MAX_HEIGHT_ZONE = 30.0;
+
+            for (let i = 0; i < rawFeatures.length; i += batchSize) {
+                const batch = rawFeatures.slice(i, i + batchSize);
+
+                await Promise.all(batch.map(async (feature, idx) => {
+                    try {
+                        if (!validateFeature(feature)) return;
+
+                        const normalizedFeature = normalizeFeatureProperties(feature, 'Buildings');
+                        if (!normalizedFeature) return;
+
+                        let cleanedGeom = turf.rewind(normalizedFeature.geometry, { reverse: true });
+                        cleanedGeom = turf.cleanCoords({
+                            type: 'Feature',
+                            geometry: cleanedGeom,
+                            properties: {}
+                        }).geometry;
+
+                        if (!cleanedGeom || cleanedGeom.type !== 'Polygon') return;
+                        const surfaceArea = Number(turf.area({ ...normalizedFeature, geometry: cleanedGeom })) || Number(normalizedFeature.properties.surface_area) || 1;
+                        if (surfaceArea <= 1) return;
+
+                        const buildingId = normalizedFeature.properties.BuildingId || `b-${i}-${idx}`;
+                        const surfaceHeight = Math.max(Number(normalizedFeature.properties.extrusion_height) || 15.0, 0.1);
+                        const baseFloors = Math.ceil(surfaceHeight / FLOOR_HEIGHT);
+
+                        let basementHeight = 0;
+                        if (extrudeEnabled && surfaceArea > 0) {
+                            basementHeight = Math.min(surfaceArea / 200, Number(extrudeDepth) || 10.0);
+                            if (basementHeight < 1.0) basementHeight = 1.0;
+                        }
+                        console.log(`Building ${buildingId}: Basement Height = ${basementHeight}`);
+
+                        const maxBaseArea = surfaceArea * Number(kdb);
+                        const totalFloorAreaAllowed = surfaceArea * Number(klb);
+                        const maxFloors = Math.max(Math.floor(totalFloorAreaAllowed / maxBaseArea) || 1, baseFloors + 2);
+                        const maxHeightAllowed = Math.min(maxFloors * FLOOR_HEIGHT, MAX_HEIGHT_ZONE);
+                        console.log(`Building ${buildingId}: Surface Area = ${surfaceArea}, Max Floors = ${maxFloors}, Max Height Allowed = ${maxHeightAllowed}`);
+
+                        let expansionHeight = 0;
+                        if (extrudeEnabled) {
+                            const totalHeightSoFar = (basementHeight || 0) + surfaceHeight;
+                            let remainingHeight = Number(maxHeightAllowed) - Number(totalHeightSoFar);
+                            if (isNaN(remainingHeight) || remainingHeight <= 0) remainingHeight = 2.0; // Minimal 2m
+                            const expansionFromArea = (surfaceArea / 100) || 0;
+                            expansionHeight = Math.min(
+                                Math.max(remainingHeight, Number(expansionFromArea)),
+                                Number(maxExpansionHeightParam) || 15.0
+                            );
+                            if (isNaN(expansionHeight)) {
+                                console.log(`Warning: Expansion Height NaN for ${buildingId}, remainingHeight=${remainingHeight}, expansionFromArea=${expansionFromArea}, maxExpansionHeightParam=${maxExpansionHeightParam}`);
+                                expansionHeight = 2.0; // Fallback
+                            }
+                            if (expansionHeight < 2.0) expansionHeight = 2.0;
+                        }
+                        console.log(`Building ${buildingId}: Expansion Height = ${expansionHeight}`);
+
+                        const H_Basement = basementHeight;
+                        const H_Surface = surfaceHeight;
+                        const H_Expansion = expansionHeight;
+
+                        const BASE_Basement = 0;
+                        const BASE_Surface = BASE_Basement + (H_Basement || 0);
+                        const BASE_Expansion = BASE_Surface + H_Surface;
+
+                        const commonProps = {
+                            ...normalizedFeature.properties,
+                            building_id: buildingId,
+                            klb,
+                            kdb,
+                            surface_area: surfaceArea,
+                            base_floors: baseFloors,
+                            max_floors: maxFloors,
+                            max_height_allowed: maxHeightAllowed,
+                            total_floor_area_allowed: totalFloorAreaAllowed
+                        };
+
+                        if (H_Basement > 0) {
+                            buildingFeatures.push({
+                                type: 'Feature',
+                                geometry: cleanedGeom,
+                                properties: {
+                                    ...commonProps,
+                                    layer: 'basement',
+                                    extrusion_height: H_Basement,
+                                    base_height: BASE_Basement
+                                }
+                            });
+                        }
+
+                        buildingFeatures.push({
+                            type: 'Feature',
+                            geometry: cleanedGeom,
+                            properties: {
+                                ...commonProps,
+                                layer: 'surface',
+                                extrusion_height: H_Surface,
+                                base_height: BASE_Surface
+                            }
+                        });
+
+                        if (H_Expansion >= 2.0) {
+                            console.log(`Adding expansion for ${buildingId}, height: ${H_Expansion}`);
+                            const expansionFloors = Math.floor(H_Expansion / FLOOR_HEIGHT);
+                            buildingFeatures.push({
+                                type: 'Feature',
+                                geometry: cleanedGeom,
+                                properties: {
+                                    ...commonProps,
+                                    layer: 'expansion',
+                                    extrusion_height: H_Expansion,
+                                    base_height: BASE_Expansion,
+                                    expansion_floors: expansionFloors
+                                }
+                            });
+                        }
+
+                    } catch (e) {
+                        console.error(`Gagal memproses fitur bangunan ${feature?.properties?.BuildingId || 'N/A'}: ${e.message}`, feature);
+                    }
+                }));
+            }
+            return buildingFeatures;
+        }
+
+        async function loadAllData() {
+            allFeatures.clear();
+            klbData = [];
+            const sourceNames = ['Sumurbandung', 'Trees', 'Buildings', 'Voxelisasi Bangunan', 'Data Emisi'];
+            sourceNames.forEach(sourceName => {
+                if (map.getSource(sourceName)) {
+                    map.getSource(sourceName).setData({ type: 'FeatureCollection', features: [] });
+                }
+            });
+            await loadData('all');
+        }
+
+        function toggleLeftSidebar() {
+            const isLeftSidebarOpen = !document.getElementById('sidebar-left').classList.contains('sidebar-left-hidden');
+            const sidebar = document.getElementById('sidebar-left');
+            const content = document.getElementById('content');
+            const toggleButton = document.getElementById('sidebar-left-toggle');
+            const toggleButtonClosed = document.getElementById('sidebar-left-toggle-closed');
+            if (isLeftSidebarOpen) {
+                sidebar.classList.add('sidebar-left-hidden');
+                content.classList.remove('md:ml-80');
+                content.classList.add('ml-0');
+                toggleButton.classList.add('sidebar-left-toggle-hidden');
+                toggleButtonClosed.style.display = 'block';
+            } else {
+                sidebar.classList.remove('sidebar-left-hidden');
+                content.classList.add('md:ml-80');
+                content.classList.remove('ml-0');
+                toggleButton.classList.remove('sidebar-left-toggle-hidden');
+                toggleButtonClosed.style.display = 'none';
+            }
+            updateContentWidth();
+            setTimeout(() => {
+                if (map) map.resize();
+                if (renderer) {
+                    const container = document.getElementById('threejs-container');
+                    renderer.setSize(container.clientWidth, container.clientHeight);
+                    camera.aspect = container.clientWidth / container.clientHeight;
+                    camera.updateProjectionMatrix();
+                }
+            }, 100);
+        }
+
+        function updateContentWidth() {
+            const content = document.getElementById('content');
+            if (window.innerWidth < 768) {
+                content.style.width = '100%';
+                content.style.marginLeft = '0';
+            } else {
+                const leftMargin = document.getElementById('sidebar-left').classList.contains('sidebar-left-hidden') ? 0 : 320;
+                content.style.width = `calc(100% - ${leftMargin}px)`;
+                content.style.marginLeft = `${leftMargin}px`;
+            }
+        }
+
+        function toggleBuildingInfo() {
+            const buildingInfo = document.getElementById('building-info');
+            buildingInfo.classList.toggle('hidden');
+            if (buildingInfo.classList.contains('hidden') && popup) {
+                popup.remove();
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeMap();
+            initializeThreeJS();
+            document.getElementById('sidebar-left-toggle').addEventListener('click', toggleLeftSidebar);
+            document.getElementById('sidebar-left-toggle-closed').addEventListener('click', toggleLeftSidebar);
+            updateContentWidth();
+        });
+    </script>
+</body>
+</html>
